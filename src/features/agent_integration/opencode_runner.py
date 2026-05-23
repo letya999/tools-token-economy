@@ -3,14 +3,16 @@ OpenCode CLI subprocess wrapper.
 
 Requires: npm install -g opencode (in WSL)
 """
+import json
 import os
 import subprocess
-import json
 import time
+
 import tiktoken
-from typing import List
+
 from src.core.models import AgentConfig, RunMetrics
 from src.core.tools import Tool
+from src.features.opencode_config import build_tool_restriction_prefix
 from src.features.rate_limiter import RateLimiter
 
 
@@ -20,7 +22,7 @@ class OpenCodeRunner:
     In mock/dry-run mode, skips the CLI entirely.
     """
 
-    def __init__(self, config: AgentConfig, tools: List[Tool], mock: bool = False):
+    def __init__(self, config: AgentConfig, tools: list[Tool], mock: bool = False):
         self.config = config
         self.tools = tools
         self.mock = mock
@@ -56,11 +58,11 @@ class OpenCodeRunner:
         """Verify required API keys are present in environment."""
         if self.mock:
             return
-            
+
         model = self._model_flag()
         if "google/" in model:
-            if not os.getenv("GOOGLE_GENAI_API_KEY") and not os.getenv("GEMINI_API_KEY"):
-                raise ValueError(f"Model {model} requires GOOGLE_GENAI_API_KEY or GEMINI_API_KEY environment variable.")
+            if not os.getenv("GOOGLE_API_KEY") and not os.getenv("GOOGLE_GENAI_API_KEY") and not os.getenv("GEMINI_API_KEY"):
+                raise ValueError(f"Model {model} requires GOOGLE_API_KEY, GOOGLE_GENAI_API_KEY or GEMINI_API_KEY environment variable.")
         elif "openai/" in model:
             if not os.getenv("OPENAI_API_KEY"):
                 raise ValueError(f"Model {model} requires OPENAI_API_KEY environment variable.")
@@ -76,10 +78,14 @@ class OpenCodeRunner:
         Execute the task via OpenCode CLI and collect metrics.
         """
         self._check_api_keys()
+
+        restriction = build_tool_restriction_prefix(self.config)
+        effective_task = restriction + task_description
+
         start_time = time.time()
 
         if self.mock:
-            simulated_output = f"Task: {task_description}\nTASK_COMPLETE"
+            simulated_output = f"Task: {effective_task}\nTASK_COMPLETE"
             token_count = self._count_tokens(simulated_output)
             return RunMetrics(
                 success=True,
@@ -102,7 +108,7 @@ class OpenCodeRunner:
                 "--dir", os.path.abspath(worktree_path),
                 "--model", self._model_flag(),
                 "--dangerously-skip-permissions",
-                task_description,
+                effective_task,
             ]
 
             result = subprocess.run(
@@ -161,7 +167,7 @@ class OpenCodeRunner:
                 tool_tokens += self._count_tokens(line)
 
         if input_tokens == 0 and output_tokens == 0:
-            input_tokens = self._count_tokens(task_description)
+            input_tokens = self._count_tokens(effective_task)
             output_tokens = self._count_tokens(result.stdout)
 
         return RunMetrics(

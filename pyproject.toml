@@ -18,6 +18,8 @@ dependencies = [
     "mcp>=1.0.0",
     "jedi>=0.19.0",
     "pytest-cov>=6.0.0",
+    "anyio[trio]>=4.0.0",
+    "pytest-anyio>=0.0.0",
 ]
 
 [tool.pytest.ini_options]
@@ -29,3 +31,41 @@ omit = ["src/infrastructure/*"]
 
 [tool.coverage.report]
 fail_under = 75
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+# Hardcore ruleset
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear (logic/reliability)
+    "S",    # flake8-bandit (security)
+    "PERF", # perflint (performance)
+    "UP",   # pyupgrade (modern syntax)
+    "C90",  # mccabe (complexity)
+    "N",    # pep8-naming
+    "PL",   # pylint (design, logical complexity, refactoring)
+    "RUF",  # ruff-specific rules
+    "TID",  # flake8-tidy-imports (clean imports)
+    "ASYNC", # flake8-async
+]
+ignore = [
+    "S101", # allow assert in tests (we might need to refine this for src)
+    "PLR0913", # too many arguments (benchmark needs some params)
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 8
+max-branches = 12
+max-statements = 50
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"

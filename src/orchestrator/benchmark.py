@@ -1,28 +1,31 @@
-import os
 import logging
-import time
+import os
 import shutil
-from typing import List, Any
-from src.core.models import EvalResult
+import time
+from typing import Any
+
 from src.core.config_loader import load_benchmark_configs
-from src.features.isolation import GitIsolationProvider
+from src.core.models import EvalResult
 from src.features.agent_integration.opencode_runner import OpenCodeRunner
 from src.features.evaluation import EvalEngine
+from src.features.isolation import GitIsolationProvider
 from src.features.metrics_aggregator import MetricsAggregator
-from src.features.tool_registry.basic_tools import FileReadTool, FileWriteTool, PatchApplierTool, GlobTool, ReadAllTool
-from src.features.tool_registry.grep_tools import RgTool, GrepTool, GitGrepTool, UgrepTool, SemgrepTool
-from src.features.tool_registry.structural_tools import RepoMapTool, TreeSitterTool
-from src.features.tool_registry.semantic_tools import SerenaAdapterTool, SembleAdapterTool, SimpleRagTool
+from src.features.opencode_config import write_opencode_json
+from src.features.tool_registry.basic_tools import FileReadTool, FileWriteTool, GlobTool, PatchApplierTool, ReadAllTool
+from src.features.tool_registry.grep_tools import GitGrepTool, GrepTool, RgTool, SemgrepTool, UgrepTool
 from src.features.tool_registry.lsp_tools import LspSymbolsTool
+from src.features.tool_registry.semantic_tools import SembleAdapterTool, SerenaAdapterTool, SimpleRagTool
 from src.features.tool_registry.shell_tool import ShellTool
+from src.features.tool_registry.structural_tools import RepoMapTool, TreeSitterTool
+
 
 class BenchmarkOrchestrator:
     """
     Main orchestrator for running the benchmark suite.
     """
-    def __init__(self, 
-                 repo_path: str, 
-                 configs_path: str, 
+    def __init__(self,
+                 repo_path: str,
+                 configs_path: str,
                  results_dir: str,
                  test_cmd: str,
                  worktree_base: str = "worktrees",
@@ -36,9 +39,9 @@ class BenchmarkOrchestrator:
         self.aggregator = MetricsAggregator(self.results_dir)
         self.isolation = GitIsolationProvider(self.repo_path, self.worktree_base)
         self.eval_engine = EvalEngine()
-        
+
         os.makedirs(self.worktree_base, exist_ok=True)
-        
+
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger("Orchestrator")
 
@@ -71,11 +74,11 @@ class BenchmarkOrchestrator:
             elif "openrouter/" in model:
                 if not os.getenv("OPENROUTER_API_KEY"):
                     missing_keys.append("OPENROUTER_API_KEY")
-        
+
         if missing_keys:
             self.logger.warning(f"Potentially missing API keys for some models: {set(missing_keys)}")
 
-    def _get_tools_for_config(self, config: Any, worktree_path: str) -> List[Any]:
+    def _get_tools_for_config(self, config: Any, worktree_path: str) -> list[Any]:
         """
         Factory method to instantiate tools based on config.
         """
@@ -99,12 +102,12 @@ class BenchmarkOrchestrator:
             "shell": ShellTool(worktree_path),
             "test": None
         }
-        
+
         selected_tools = []
         for t_name in config.tools:
-            if t_name in tool_map and tool_map[t_name]:
+            if tool_map.get(t_name):
                 selected_tools.append(tool_map[t_name])
-        
+
         return selected_tools
 
     def run_suite(self, task_description: str):
@@ -113,26 +116,29 @@ class BenchmarkOrchestrator:
         """
         self._validate_environment()
         self.logger.info(f"Starting benchmark suite with {len(self.configs)} configurations (Dry Run: {self.dry_run}).")
-        
+
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        
+
         for config in self.configs:
             self.logger.info(f"Running config: {config.id} ({config.name})")
-            
+
             run_id = f"run_{timestamp}_{config.id}"
             worktree_path = None
             tools = []
             try:
                 # 1. Setup Isolation
                 worktree_path = self.isolation.setup(run_id)
-                
-                # 2. Setup Tools
+
+                # 2. Write per-run opencode.json with MCP servers for this config
+                write_opencode_json(config, worktree_path)
+
+                # 3. Setup Tools
                 tools = self._get_tools_for_config(config, worktree_path)
-                
+
                 # 3. Run Agent
                 runner = OpenCodeRunner(config, tools, mock=self.dry_run)
                 run_metrics = runner.run(task_description, worktree_path=worktree_path)
-                
+
                 # 4. Evaluate
                 eval_res = self.eval_engine.evaluate(worktree_path, self.test_cmd)
 
@@ -152,10 +158,10 @@ class BenchmarkOrchestrator:
                     error=None,
                     patch=None  # Patch extraction can be added later
                 )
-                
+
                 save_path = self.aggregator.save_run(final_result)
                 self.logger.info(f"Config {config.id} finished. Results saved to {save_path}")
-                
+
             except Exception as e:
                 self.logger.error(f"Error running config {config.id}: {e}", exc_info=True)
             finally:
@@ -167,11 +173,11 @@ class BenchmarkOrchestrator:
                             tool.close()
                         except Exception:
                             pass
-                
+
                 if worktree_path:
                     self.isolation.teardown(run_id)
-        
+
         self.logger.info("Benchmark suite completed.")
-        
+
         rankings = self.aggregator.generate_rankings()
         self.logger.info("Rankings generated:\n" + rankings)
