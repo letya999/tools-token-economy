@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "eval_score": 1.0,
+  "input_tokens": 106,
+  "output_tokens": 10,
+  "tool_tokens": 0,
+  "duration_sec": 0.00015234947204589844,
+  "model_calls": 1,
+  "tool_calls": 0,
+  "total_tokens": 116,
+  "cost_usd": 0.0000146
+}

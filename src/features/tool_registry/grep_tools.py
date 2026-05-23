@@ -9,11 +9,7 @@ class GrepTool(BaseTool):
         self.shell = ShellExecutor()
 
     def execute(self, pattern: str) -> ToolResult:
-        # -n line numbers, -r recursive, -I ignore binary files
         safe_pattern = shlex.quote(pattern)
-        # Handle cross-platform: Windows powershell natively handles grep as an alias sometimes, 
-        # but in WSL2 or native *nix it's the actual binary.
-        # Since requirements state WSL2 compatibility, we assume standard grep flags.
         cmd = f"grep -rnI {safe_pattern} ."
         result = self.shell.run(cmd, cwd=self.worktree_path)
         
@@ -53,6 +49,44 @@ class RgTool(BaseTool):
     def execute(self, pattern: str) -> ToolResult:
         safe_pattern = shlex.quote(pattern)
         cmd = f"rg -n {safe_pattern}"
+        result = self.shell.run(cmd, cwd=self.worktree_path)
+        
+        output = result.stdout.strip()
+        if not output and result.stderr:
+            output = result.stderr.strip()
+        elif not output:
+            output = "No matches found."
+            
+        return self.format_result(output)
+
+class UgrepTool(BaseTool):
+    def __init__(self, worktree_path: str):
+        super().__init__("ugrep", "Ugrep search")
+        self.worktree_path = worktree_path
+        self.shell = ShellExecutor()
+
+    def execute(self, pattern: str) -> ToolResult:
+        safe_pattern = shlex.quote(pattern)
+        cmd = f"ugrep -n {safe_pattern}"
+        result = self.shell.run(cmd, cwd=self.worktree_path)
+        
+        output = result.stdout.strip()
+        if not output and result.stderr:
+            output = result.stderr.strip()
+        elif not output:
+            output = "No matches found."
+            
+        return self.format_result(output)
+
+class SemgrepTool(BaseTool):
+    def __init__(self, worktree_path: str):
+        super().__init__("semgrep", "Semgrep structural search")
+        self.worktree_path = worktree_path
+        self.shell = ShellExecutor()
+
+    def execute(self, pattern: str) -> ToolResult:
+        safe_pattern = shlex.quote(pattern)
+        cmd = f"semgrep --pattern {safe_pattern} --quiet"
         result = self.shell.run(cmd, cwd=self.worktree_path)
         
         output = result.stdout.strip()
