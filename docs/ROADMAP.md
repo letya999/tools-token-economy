@@ -77,7 +77,7 @@ This document outlines the development plan for the framework testing token-effi
 - Tools return results with line numbers and context.
 - Tests written using mock files.
 
-### Task 11: Structural Navigation Tools
+### Task 11: Structural Navigation Tools [DONE]
 **Description:** Implement `tree-sitter AST`, `lsp_symbols/references`, `repo_map`.
 **AC:**
 - Parsers connected (e.g., `tree-sitter-python`).
