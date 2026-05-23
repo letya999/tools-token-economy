@@ -4,11 +4,15 @@ OpenCode CLI subprocess wrapper.
 Requires: npm install -g opencode (in WSL)
 """
 import json
+import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from typing import Any
 
 import tiktoken
@@ -16,6 +20,10 @@ import tiktoken
 from src.core.models import AgentConfig, RunMetrics
 from src.core.tools import Tool
 from src.features.rate_limiter import RateLimiter
+
+_FALLBACK_MODELS = ["opencode/big-pickle", "opencode/deepseek-v4-flash-free"]
+_MAX_QUOTA_RETRIES = 3
+_log = logging.getLogger(__name__)
 
 
 def _resolve_opencode_exe() -> str:
@@ -128,28 +136,80 @@ class OpenCodeRunner:
                 m["tool_tokens"] += self._count_tokens(line)
         return m
 
+    def _probe_quota(self) -> tuple[bool, float]:
+        """Check Google API quota. Returns (quota_ok, retry_after_seconds).
+        Only probes for google/ models; other providers are assumed ok."""
+        if "google/" not in self._model_flag():
+            return True, 0.0
+        api_key = (
+            os.getenv("GOOGLE_GENERATIVE_AI_API_KEY")
+            or os.getenv("GOOGLE_API_KEY")
+            or os.getenv("GEMINI_API_KEY")
+        )
+        if not api_key:
+            return True, 0.0
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        try:
+            urllib.request.urlopen(urllib.request.Request(url), timeout=8)
+            return True, 0.0
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                body = exc.read().decode(errors="ignore")
+                m = re.search(r"retry in ([\d.]+)s", body)
+                wait = float(m.group(1)) + 5.0 if m else 65.0
+                return False, wait
+            return True, 0.0
+        except Exception:
+            return True, 0.0
+
+    def _run_with_model(
+        self, model_flag: str, task_description: str, worktree_path: str
+    ) -> subprocess.CompletedProcess:
+        """Run opencode subprocess with the given model flag."""
+        cmd = [
+            _resolve_opencode_exe(),
+            "run", "--format", "json",
+            "--dir", os.path.abspath(worktree_path),
+            "--model", model_flag,
+            "--dangerously-skip-permissions", task_description,
+        ]
+        return subprocess.run(
+            cmd, capture_output=True, text=True,
+            timeout=self.timeout_sec, check=False,
+            cwd=os.path.abspath(worktree_path),
+        )
+
     def run(self, task_description: str, worktree_path: str = ".") -> RunMetrics:
-        """Execute task via OpenCode CLI."""
+        """Execute task via OpenCode CLI with quota-retry and free-model fallback."""
         self._check_api_keys()
         start_time = time.time()
 
         if self.mock:
             return self._run_mock(task_description, start_time)
 
+        model_flag = self._model_flag()
+        result = None
+
         with self._rate_limiter:
-            cmd = [
-                _resolve_opencode_exe(),
-                "run", "--format", "json",
-                "--dir", os.path.abspath(worktree_path),
-                "--model", self._model_flag(),
-                "--dangerously-skip-permissions", task_description,
-            ]
-            # cwd must be the worktree so opencode reads opencode.json (provider config) from there
-            result = subprocess.run(
-                cmd, capture_output=True, text=True,
-                timeout=self.timeout_sec, check=False,
-                cwd=os.path.abspath(worktree_path),
-            )
+            # Fallback 1: retry after quota reset (up to _MAX_QUOTA_RETRIES times)
+            for attempt in range(_MAX_QUOTA_RETRIES + 1):
+                quota_ok, wait_sec = self._probe_quota()
+                if quota_ok:
+                    break
+                if attempt < _MAX_QUOTA_RETRIES:
+                    _log.warning(
+                        "Quota exhausted for %s, waiting %.0fs (retry %d/%d)",
+                        model_flag, wait_sec, attempt + 1, _MAX_QUOTA_RETRIES,
+                    )
+                    time.sleep(wait_sec)
+                else:
+                    # Fallback 2: switch to free opencode-hosted model
+                    model_flag = _FALLBACK_MODELS[0]
+                    _log.warning(
+                        "Quota retries exhausted, falling back to free model: %s", model_flag,
+                    )
+
+            result = self._run_with_model(model_flag, task_description, worktree_path)
 
         duration = time.time() - start_time
         m = self._parse_metrics(result.stdout)
@@ -162,7 +222,7 @@ class OpenCodeRunner:
             success=result.returncode == 0,
             eval_score=1.0 if result.returncode == 0 else 0.0,
             duration_sec=duration,
-            model_name=self.config.model,
+            model_name=model_flag,
             **m
         )
 
