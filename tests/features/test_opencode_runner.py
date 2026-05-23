@@ -1,9 +1,21 @@
 import pytest
 import json
+import os
 from unittest.mock import MagicMock, patch
 from src.features.agent_integration.opencode_runner import OpenCodeRunner
 from src.core.models import AgentConfig
 from src.core.tools import Tool
+
+@pytest.fixture(autouse=True)
+def dummy_env():
+    """Ensure API keys are present for tests."""
+    with patch.dict("os.environ", {
+        "GOOGLE_GENAI_API_KEY": "fake-key",
+        "OPENAI_API_KEY": "fake-key",
+        "ANTHROPIC_API_KEY": "fake-key",
+        "OPENROUTER_API_KEY": "fake-key"
+    }):
+        yield
 
 @pytest.fixture
 def mock_tool():

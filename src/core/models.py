@@ -18,6 +18,7 @@ class RunMetrics(BaseModel):
     duration_sec: float
     model_calls: int
     tool_calls: int
+    model_name: str = "gemini-2.5-flash"
     tests_passed: int = 0
     files_read: int = 0
     files_changed: int = 0
@@ -32,10 +33,22 @@ class RunMetrics(BaseModel):
     @computed_field
     @property
     def cost_usd(self) -> float:
-        # Approximate Gemini 2.5 Flash pricing: $0.1 / 1M input, $0.4 / 1M output
-        input_cost = (self.input_tokens / 1_000_000) * 0.1
-        output_cost = (self.output_tokens / 1_000_000) * 0.4
-        tool_cost = (self.tool_tokens / 1_000_000) * 0.1 # assuming tool output goes back to input
+        # Pricing registry (cost per 1M tokens)
+        pricing = {
+            "gemini-2.5-flash": {"input": 0.1, "output": 0.4},
+            "gpt-4o": {"input": 5.0, "output": 15.0},
+            "claude-3-5-sonnet": {"input": 3.0, "output": 15.0},
+            "openrouter/deepseek/deepseek-coder": {"input": 0.1, "output": 0.1},
+        }
+        
+        # Default to gemini-2.5-flash pricing if unknown
+        p = pricing.get(self.model_name, pricing["gemini-2.5-flash"])
+        
+        input_cost = (self.input_tokens / 1_000_000) * p["input"]
+        output_cost = (self.output_tokens / 1_000_000) * p["output"]
+        # Tool tokens are usually sent back to input in the next turn
+        tool_cost = (self.tool_tokens / 1_000_000) * p["input"]
+        
         return input_cost + output_cost + tool_cost
 
     @computed_field

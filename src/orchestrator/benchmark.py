@@ -1,6 +1,7 @@
 import os
 import logging
 import time
+import shutil
 from typing import List, Any
 from src.core.models import EvalResult
 from src.core.config_loader import load_benchmark_configs
@@ -41,6 +42,39 @@ class BenchmarkOrchestrator:
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger("Orchestrator")
 
+    def _validate_environment(self):
+        """
+        Pre-flight checks for required CLI tools and API keys.
+        """
+        if self.dry_run:
+            return
+
+        # 1. Check CLI Tools
+        required_cmds = ["opencode", "git"]
+        for cmd in required_cmds:
+            if not shutil.which(cmd):
+                raise RuntimeError(f"Required CLI tool '{cmd}' not found in PATH.")
+
+        # 2. Check API Keys for all configured models
+        missing_keys = []
+        for config in self.configs:
+            model = config.model
+            if "gemini" in model or "google/" in model:
+                if not os.getenv("GOOGLE_GENAI_API_KEY") and not os.getenv("GEMINI_API_KEY"):
+                    missing_keys.append("GOOGLE_GENAI_API_KEY")
+            elif "gpt-" in model or "openai/" in model:
+                if not os.getenv("OPENAI_API_KEY"):
+                    missing_keys.append("OPENAI_API_KEY")
+            elif "claude-" in model or "anthropic/" in model:
+                if not os.getenv("ANTHROPIC_API_KEY"):
+                    missing_keys.append("ANTHROPIC_API_KEY")
+            elif "openrouter/" in model:
+                if not os.getenv("OPENROUTER_API_KEY"):
+                    missing_keys.append("OPENROUTER_API_KEY")
+        
+        if missing_keys:
+            self.logger.warning(f"Potentially missing API keys for some models: {set(missing_keys)}")
+
     def _get_tools_for_config(self, config: Any, worktree_path: str) -> List[Any]:
         """
         Factory method to instantiate tools based on config.
@@ -77,6 +111,7 @@ class BenchmarkOrchestrator:
         """
         Runs all configurations sequentially.
         """
+        self._validate_environment()
         self.logger.info(f"Starting benchmark suite with {len(self.configs)} configurations (Dry Run: {self.dry_run}).")
         
         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -86,6 +121,7 @@ class BenchmarkOrchestrator:
             
             run_id = f"run_{timestamp}_{config.id}"
             worktree_path = None
+            tools = []
             try:
                 # 1. Setup Isolation
                 worktree_path = self.isolation.setup(run_id)
@@ -100,7 +136,7 @@ class BenchmarkOrchestrator:
                 # 4. Evaluate
                 eval_res = self.eval_engine.evaluate(worktree_path, self.test_cmd)
 
-                # Merge eval counts into metrics (agent runner doesn't know test results)
+                # Merge eval counts into metrics
                 run_metrics = run_metrics.model_copy(update={
                     "tests_passed": eval_res.tests_passed,
                     "eval_score": eval_res.eval_score,
@@ -114,7 +150,7 @@ class BenchmarkOrchestrator:
                     metrics=run_metrics,
                     success=eval_res.success,
                     error=None,
-                    patch=None
+                    patch=None  # Patch extraction can be added later
                 )
                 
                 save_path = self.aggregator.save_run(final_result)
@@ -123,7 +159,15 @@ class BenchmarkOrchestrator:
             except Exception as e:
                 self.logger.error(f"Error running config {config.id}: {e}", exc_info=True)
             finally:
-                # 6. Teardown
+                # 6. Cleanup
+                # Close persistent tools (e.g. MCP clients)
+                for tool in tools:
+                    if hasattr(tool, "close"):
+                        try:
+                            tool.close()
+                        except Exception:
+                            pass
+                
                 if worktree_path:
                     self.isolation.teardown(run_id)
         

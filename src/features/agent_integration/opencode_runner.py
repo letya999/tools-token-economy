@@ -3,6 +3,7 @@ OpenCode CLI subprocess wrapper.
 
 Requires: npm install -g opencode (in WSL)
 """
+import os
 import subprocess
 import json
 import time
@@ -23,30 +24,58 @@ class OpenCodeRunner:
         self.config = config
         self.tools = tools
         self.mock = mock
-        self._tokenizer = tiktoken.get_encoding("cl100k_base")
+        # Use cl100k_base as a general approximation for token counting fallback
+        try:
+            self._tokenizer = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            self._tokenizer = None
         self._rate_limiter = RateLimiter(requests_per_minute=10)
 
     def _count_tokens(self, text: str) -> int:
         if not text:
             return 0
-        return len(self._tokenizer.encode(text))
+        if self._tokenizer:
+            return len(self._tokenizer.encode(text))
+        # Very rough approximation if tiktoken fails: ~4 chars per token
+        return len(text) // 4
 
     def _model_flag(self) -> str:
         """Convert model name to opencode provider/model format."""
         model = self.config.model
-        # gemini-2.5-flash -> google/gemini-2.5-flash
+        if "/" in model:
+            return model
         if model.startswith("gemini-"):
             return f"google/{model}"
-        # claude-* -> anthropic/claude-*
         if model.startswith("claude-"):
             return f"anthropic/{model}"
-        # Already in provider/model format
+        if model.startswith("gpt-"):
+            return f"openai/{model}"
         return model
+
+    def _check_api_keys(self):
+        """Verify required API keys are present in environment."""
+        if self.mock:
+            return
+            
+        model = self._model_flag()
+        if "google/" in model:
+            if not os.getenv("GOOGLE_GENAI_API_KEY") and not os.getenv("GEMINI_API_KEY"):
+                raise ValueError(f"Model {model} requires GOOGLE_GENAI_API_KEY or GEMINI_API_KEY environment variable.")
+        elif "openai/" in model:
+            if not os.getenv("OPENAI_API_KEY"):
+                raise ValueError(f"Model {model} requires OPENAI_API_KEY environment variable.")
+        elif "anthropic/" in model:
+            if not os.getenv("ANTHROPIC_API_KEY"):
+                raise ValueError(f"Model {model} requires ANTHROPIC_API_KEY environment variable.")
+        elif "openrouter/" in model:
+            if not os.getenv("OPENROUTER_API_KEY"):
+                raise ValueError(f"Model {model} requires OPENROUTER_API_KEY environment variable.")
 
     def run(self, task_description: str, worktree_path: str = ".") -> RunMetrics:
         """
         Execute the task via OpenCode CLI and collect metrics.
         """
+        self._check_api_keys()
         start_time = time.time()
 
         if self.mock:
@@ -61,17 +90,17 @@ class OpenCodeRunner:
                 duration_sec=time.time() - start_time,
                 model_calls=1,
                 tool_calls=0,
+                model_name=self.config.model
             )
 
         # Use rate limiter for real runs
         with self._rate_limiter:
+            # opencode run --format json --dir [path] --model [provider/model] [task]
             cmd = [
                 "opencode", "run",
                 "--format", "json",
-                "--dir", worktree_path,
+                "--dir", os.path.abspath(worktree_path),
                 "--model", self._model_flag(),
-                # opencode has no --max-turns; session runs until idle
-                # --dangerously-skip-permissions grants full tool access
                 "--dangerously-skip-permissions",
                 task_description,
             ]
@@ -85,12 +114,6 @@ class OpenCodeRunner:
 
         duration = time.time() - start_time
 
-        # Parse JSONL output for metrics.
-        # opencode --format json emits JSONL with events:
-        #   type="tool_use"   -> part.input (args), part.output (result)
-        #   type="step_finish" -> contains assistant message with usage
-        #   type="text"        -> final text output
-        #   type="error"       -> session error
         input_tokens = 0
         output_tokens = 0
         tool_tokens = 0
@@ -111,7 +134,6 @@ class OpenCodeRunner:
                 event_type = event.get("type", "")
 
                 if event_type == "step_finish":
-                    # step_finish carries assistant message; usage is nested
                     usage = event.get("usage", {})
                     input_tokens += usage.get("inputTokens", usage.get("input_tokens", 0))
                     output_tokens += usage.get("outputTokens", usage.get("output_tokens", 0))
@@ -138,7 +160,6 @@ class OpenCodeRunner:
             except json.JSONDecodeError:
                 tool_tokens += self._count_tokens(line)
 
-        # Fallback token estimation if structured events had no usage
         if input_tokens == 0 and output_tokens == 0:
             input_tokens = self._count_tokens(task_description)
             output_tokens = self._count_tokens(result.stdout)
@@ -152,6 +173,7 @@ class OpenCodeRunner:
             duration_sec=duration,
             model_calls=model_calls,
             tool_calls=tool_call_count,
+            model_name=self.config.model,
             files_read=files_read,
             files_changed=files_changed,
             patch_lines=patch_lines,

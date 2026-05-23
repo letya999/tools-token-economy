@@ -11,6 +11,7 @@ class EvalOutcome:
     tests_passed: int = 0
     tests_failed: int = 0
     tests_total: int = 0
+    patch: Optional[str] = None
 
 class EvalEngine:
     """
