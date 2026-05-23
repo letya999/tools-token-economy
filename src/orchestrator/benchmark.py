@@ -1,7 +1,8 @@
 import os
 import logging
+import time
 from typing import List, Any
-from src.core.models import AgentConfig, EvalResult, RunMetrics
+from src.core.models import EvalResult
 from src.core.config_loader import load_benchmark_configs
 from src.features.isolation import GitIsolationProvider
 from src.features.agent_integration.opencode_runner import OpenCodeRunner
@@ -11,6 +12,8 @@ from src.features.tool_registry.basic_tools import FileReadTool, FileWriteTool, 
 from src.features.tool_registry.grep_tools import RgTool, GrepTool, GitGrepTool, UgrepTool, SemgrepTool
 from src.features.tool_registry.structural_tools import RepoMapTool, TreeSitterTool
 from src.features.tool_registry.semantic_tools import SerenaAdapterTool, SembleAdapterTool, SimpleRagTool
+from src.features.tool_registry.lsp_tools import LspSymbolsTool
+from src.features.tool_registry.shell_tool import ShellTool
 
 class BenchmarkOrchestrator:
     """
@@ -38,7 +41,7 @@ class BenchmarkOrchestrator:
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger("Orchestrator")
 
-    def _get_tools_for_config(self, config: AgentConfig, worktree_path: str) -> List[Any]:
+    def _get_tools_for_config(self, config: Any, worktree_path: str) -> List[Any]:
         """
         Factory method to instantiate tools based on config.
         """
@@ -58,6 +61,8 @@ class BenchmarkOrchestrator:
             "simple_rag": SimpleRagTool(worktree_path),
             "serena": SerenaAdapterTool(worktree_path),
             "semble": SembleAdapterTool(worktree_path),
+            "lsp_symbols": LspSymbolsTool(worktree_path),
+            "shell": ShellTool(worktree_path),
             "test": None
         }
         
@@ -74,10 +79,12 @@ class BenchmarkOrchestrator:
         """
         self.logger.info(f"Starting benchmark suite with {len(self.configs)} configurations (Dry Run: {self.dry_run}).")
         
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        
         for config in self.configs:
             self.logger.info(f"Running config: {config.id} ({config.name})")
             
-            run_id = f"run_{config.id}"
+            run_id = f"run_{timestamp}_{config.id}"
             worktree_path = None
             try:
                 # 1. Setup Isolation
@@ -88,11 +95,18 @@ class BenchmarkOrchestrator:
                 
                 # 3. Run Agent
                 runner = OpenCodeRunner(config, tools, mock=self.dry_run)
-                run_metrics = runner.run(task_description)
+                run_metrics = runner.run(task_description, worktree_path=worktree_path)
                 
                 # 4. Evaluate
                 eval_res = self.eval_engine.evaluate(worktree_path, self.test_cmd)
-                
+
+                # Merge eval counts into metrics (agent runner doesn't know test results)
+                run_metrics = run_metrics.model_copy(update={
+                    "tests_passed": eval_res.tests_passed,
+                    "eval_score": eval_res.eval_score,
+                    "success": eval_res.success,
+                })
+
                 # 5. Aggregate Results
                 final_result = EvalResult(
                     run_id=run_id,
@@ -114,3 +128,6 @@ class BenchmarkOrchestrator:
                     self.isolation.teardown(run_id)
         
         self.logger.info("Benchmark suite completed.")
+        
+        rankings = self.aggregator.generate_rankings()
+        self.logger.info("Rankings generated:\n" + rankings)

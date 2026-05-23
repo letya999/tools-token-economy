@@ -8,8 +8,10 @@ def main():
     parser.add_argument("--configs", default="configs/benchmark_configs.yaml", help="Path to the configs YAML")
     parser.add_argument("--results", default="results", help="Directory to save results")
     parser.add_argument("--test-cmd", default="pytest", help="Command to run tests")
+    parser.add_argument("--worktree-base", default="worktrees", help="Base directory for temporary worktrees")
     parser.add_argument("--task", required=True, help="Task description for the agent")
-    parser.add_argument("--dry-run", action="store_true", help="Run with mock agent (not implemented yet)")
+    parser.add_argument("--dry-run", action="store_true", 
+                        help="Run with mock agent (skips real API calls, uses simulated responses)")
 
     args = parser.parse_args()
 
@@ -21,6 +23,7 @@ def main():
         configs_path=args.configs,
         results_dir=args.results,
         test_cmd=args.test_cmd,
+        worktree_base=args.worktree_base,
         dry_run=args.dry_run
     )
 

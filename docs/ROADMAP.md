@@ -105,29 +105,30 @@ This document outlines the development plan for the framework testing token-effi
 
 ---
 
-## Phase 5: Orchestrator, Configurations & E2E
+## Phase 5: Orchestrator, Configurations & E2E [DONE]
 
-### Task 17: Configuration Registry (20 Configs)
+### Task 17: Configuration Registry (20 Configs) [DONE]
 **Description:** Transfer 20 configurations from the spec to code.
 **AC:**
 - `configs/benchmark_configs.yaml` contains 20 valid descriptions.
 - Parser successfully loads configs into `AgentConfig` objects.
 
-### Task 18: Main Orchestrator Loop
+### Task 18: Main Orchestrator Loop [DONE]
 **Description:** Assemble all components: Config -> Worktree -> Run OpenCode -> Eval -> Teardown -> Report.
 **AC:**
 - `benchmark.py` (entrypoint) written.
 - Orchestrator handles sequential suite execution and rollback on failure.
 
-### Task 19: E2E Dry-Run (Mock Agent)
+### Task 19: E2E Dry-Run (Mock Agent) [DONE]
 **Description:** Run the pipeline with a Mock model that doesn't call the real API.
 **AC:**
 - `--dry-run` flag added.
-- Script passes 20 configs without real token expenditure.
+- Script passes 20 configurations without real token expenditure.
 
-### Task 20: Final E2E Run on Test Repository
+### Task 20: Final E2E Run on Test Repository [DONE]
 **Description:** Full execution on a small test repository with real Gemini 2.5 Flash.
 **AC:**
 - `benchmark.py` execution successful.
 - Final rankings table generated.
 - Rate limits respected.
+

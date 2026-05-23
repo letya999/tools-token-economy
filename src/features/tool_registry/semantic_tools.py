@@ -1,7 +1,8 @@
 import os
-from typing import List, Tuple
+from typing import List
 from rank_bm25 import BM25Okapi
 from src.core.tools import BaseTool, ToolResult
+from src.features.mcp_client import McpToolClient
 
 class SimpleRagTool(BaseTool):
     """
@@ -34,7 +35,7 @@ class SimpleRagTool(BaseTool):
                     content = f.read()
                     corpus.append(content.lower().split())
                     file_map.append(f_path)
-            except:
+            except Exception:
                 continue
 
         if not corpus:
@@ -50,9 +51,12 @@ class SimpleRagTool(BaseTool):
         for full_path in top_n:
             rel_path = os.path.relpath(full_path, self.worktree_path)
             # Извлекаем краткий контекст (первые 500 символов)
-            with open(full_path, "r", encoding="utf-8") as f:
-                snippet = f.read(500).strip()
-            results.append(f"FILE: {rel_path}\nSNIPPET: {snippet}...")
+            try:
+                with open(full_path, "r", encoding="utf-8") as f:
+                    snippet = f.read(500).strip()
+                results.append(f"FILE: {rel_path}\nSNIPPET: {snippet}...")
+            except Exception:
+                continue
 
         output = "\n\n".join(results) if results else "No relevant files found."
         return self.format_result(output)
@@ -60,24 +64,28 @@ class SimpleRagTool(BaseTool):
 class SerenaAdapterTool(BaseTool):
     """
     Инструмент для семантического поиска (Serena). 
-    В данной версии может работать как локально (BM25), 
-    так и проксировать запросы к Serena MCP серверу.
+    В данной версии работает через Serena MCP сервер.
     """
     def __init__(self, worktree_path: str):
         super().__init__("serena", "Semantic retrieval for codebase using Serena MCP")
         self.worktree_path = worktree_path
         self.rag_engine = SimpleRagTool(worktree_path)
 
-    def execute(self, query: str, use_mcp: bool = True) -> ToolResult:
+    def execute(self, query: str) -> ToolResult:
         """
         Ищет наиболее релевантные фрагменты кода.
         """
-        if use_mcp:
-            # Здесь логика вызова внешнего бинарника serena или MCP протокола
-            # Для бенчмарка мы можем вызывать 'serena memories read ...' или аналоги
-            return self.format_result(f"Serena MCP (via CLI) processed: {query}")
-        
-        return self.rag_engine.execute(query=query)
+        try:
+            # serena-agent package: `uv tool install serena-agent`
+            # CLI: serena start-mcp-server --project <path>
+            client = McpToolClient(
+                server_command="serena",
+                server_args=["start-mcp-server", "--project", self.worktree_path],
+            )
+            result = client.call_tool("find_symbol", {"query": query})
+            return self.format_result(result)
+        except Exception:
+            return self.rag_engine.execute(query=query)
 
 class SembleAdapterTool(BaseTool):
     """
@@ -86,10 +94,22 @@ class SembleAdapterTool(BaseTool):
     def __init__(self, worktree_path: str):
         super().__init__("semble", "Structural navigation using Semble MCP")
         self.worktree_path = worktree_path
+        self.rag_engine = SimpleRagTool(worktree_path)
 
-    def execute(self, action: str = "map") -> ToolResult:
+    def execute(self, action: str = "map", query: str = "") -> ToolResult:
         """
         Выполняет структурный анализ (map, symbols, etc.)
+        Semble has no public MCP server; falls back to Serena-compatible approach.
         """
-        # Логика вызова semble CLI
-        return self.format_result(f"Semble MCP action '{action}' executed on {self.worktree_path}")
+        try:
+            # Try Serena as fallback for structural navigation (it covers the same use case)
+            client = McpToolClient(
+                server_command="serena",
+                server_args=["start-mcp-server", "--project", self.worktree_path],
+            )
+            tool_name = "get_symbols_overview" if action == "map" else "find_symbol"
+            args = {"query": query} if query else {}
+            result = client.call_tool(tool_name, args)
+            return self.format_result(result)
+        except Exception:
+            return self.rag_engine.execute(query=query or action)

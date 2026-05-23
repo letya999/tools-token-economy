@@ -1,4 +1,4 @@
-from typing import Protocol, Any
+from typing import Protocol
 from pydantic import BaseModel
 import tiktoken
 

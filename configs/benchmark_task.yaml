@@ -1,0 +1,55 @@
+# Benchmark target repository and task definition
+# Spec: "один средний реальный репозиторий + одна фиксированная задача"
+
+target_repo:
+  url: "https://github.com/letya999/process_metrics_platform_v2"
+  # Freeze to a specific commit for full reproducibility
+  # Run: git rev-parse HEAD  after cloning to get this value
+  commit: "HEAD"
+  local_path: ""  # Set after cloning, e.g. /home/user/repos/process_metrics_platform_v2
+
+task:
+  description: |
+    Complete the full schedule/sensor lifecycle control surface in the Admin UI:
+
+    1. Add FastAPI endpoints in app/api/admin.py:
+       - GET  /api/v1/schedules         — list all Dagster schedules with status (running/stopped)
+       - POST /api/v1/schedules/{name}/start  — start a schedule
+       - POST /api/v1/schedules/{name}/stop   — stop a schedule
+       - GET  /api/v1/sensors            — list all sensors with status
+       - POST /api/v1/sensors/{name}/start    — start a sensor
+       - POST /api/v1/sensors/{name}/stop     — stop a sensor
+       - GET  /api/v1/runs               — run history (last 50 runs, with status/timestamps)
+       - POST /api/v1/runs/{run_id}/rerun     — one-click rerun for a failed/completed run
+
+    2. Add a new Streamlit page in streamlit_admin/ for schedule/sensor management:
+       - Table showing all schedules with current status
+       - Start/Stop buttons per schedule
+       - Table showing all sensors with current status
+       - Run history table with last success/failure timestamps
+       - One-click rerun button for failed runs
+
+    The goal: operations can manage ETL/metrics lifecycle without Dagster CLI access.
+
+  # Command to verify the task was completed correctly
+  test_cmd: "python -m pytest tests/ -v --tb=short -q -m 'unit or not integration'"
+
+  # Acceptance criteria for success evaluation
+  success_criteria:
+    - "All new API endpoints return 200 on valid input"
+    - "Schedule list includes at least one schedule"
+    - "Run history returns paginated results"
+    - "Tests pass without errors"
+
+setup:
+  # Run these once to prepare the benchmark environment (from WSL)
+  clone_cmd: "git clone https://github.com/letya999/process_metrics_platform_v2 /tmp/benchmark_repo"
+  install_cmd: "cd /tmp/benchmark_repo && pip install -e ."
+  # OpenCode model: uses google/gemini-2.5-flash (free tier, 10 RPM)
+
+# Usage:
+#   python main.py \
+#     --repo /tmp/benchmark_repo \
+#     --task "$(python -c \"import yaml; print(yaml.safe_load(open('configs/benchmark_task.yaml'))['task']['description'])\")" \
+#     --test-cmd "python -m pytest tests/ -v --tb=short -q -m 'unit or not integration'" \
+#     --results results_real

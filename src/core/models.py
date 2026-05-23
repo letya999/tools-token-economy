@@ -18,6 +18,11 @@ class RunMetrics(BaseModel):
     duration_sec: float
     model_calls: int
     tool_calls: int
+    tests_passed: int = 0
+    files_read: int = 0
+    files_changed: int = 0
+    patch_lines: int = 0
+    errors: int = 0
     
     @computed_field
     @property
@@ -28,16 +33,22 @@ class RunMetrics(BaseModel):
     @property
     def cost_usd(self) -> float:
         # Approximate Gemini 2.5 Flash pricing: $0.1 / 1M input, $0.4 / 1M output
-        # Tool tokens are essentially part of input or output context, 
-        # but here we treat them as additional overhead for the benchmark.
         input_cost = (self.input_tokens / 1_000_000) * 0.1
         output_cost = (self.output_tokens / 1_000_000) * 0.4
         tool_cost = (self.tool_tokens / 1_000_000) * 0.1 # assuming tool output goes back to input
         return input_cost + output_cost + tool_cost
 
+    @computed_field
+    @property
+    def success_per_token(self) -> float:
+        if self.total_tokens == 0:
+            return 0.0
+        return 1.0 / self.total_tokens if self.success else 0.0
+
 class EvalResult(BaseModel):
     run_id: str
     config_id: str
     metrics: RunMetrics
+    success: bool
     patch: Optional[str] = None
     error: Optional[str] = None

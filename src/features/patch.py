@@ -1,5 +1,4 @@
 import os
-import subprocess
 from typing import Optional
 from src.features.shell import ShellExecutor
 

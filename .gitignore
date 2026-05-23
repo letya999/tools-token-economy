@@ -29,8 +29,15 @@ ENV/
 # Project specific
 worktrees/
 results/
+results_*/
+plans/
 .uv/
 .python-version
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
 
 # IDE
 .vscode/

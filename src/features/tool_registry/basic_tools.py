@@ -43,7 +43,7 @@ class ReadAllTool(BaseTool):
                     with open(os.path.join(root, file), "r", encoding="utf-8") as f:
                         content = f.read()
                         output.append(f"--- FILE: {rel_path} ---\n{content}")
-                except:
+                except Exception:
                     continue
         return self.format_result("\n\n".join(output))
 
