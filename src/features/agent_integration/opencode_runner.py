@@ -5,7 +5,9 @@ Requires: npm install -g opencode (in WSL)
 """
 import json
 import os
+import shutil
 import subprocess
+import sys
 import time
 from typing import Any
 
@@ -123,12 +125,18 @@ class OpenCodeRunner:
             return self._run_mock(task_description, start_time)
 
         with self._rate_limiter:
-            cmd = [
-                "opencode", "run", "--format", "json",
+            opencode_cmd = shutil.which("opencode") or "opencode"
+            run_args = [
+                "run", "--format", "json",
                 "--dir", os.path.abspath(worktree_path),
                 "--model", self._model_flag(),
                 "--dangerously-skip-permissions", task_description,
             ]
+            # On Windows, .cmd/.ps1 scripts require cmd /c to execute via CreateProcess
+            if sys.platform == "win32" and opencode_cmd.lower().endswith((".cmd", ".ps1")):
+                cmd = ["cmd", "/c", opencode_cmd] + run_args
+            else:
+                cmd = [opencode_cmd] + run_args
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
 
         duration = time.time() - start_time
