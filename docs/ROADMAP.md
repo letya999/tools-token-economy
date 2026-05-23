@@ -84,7 +84,7 @@ This document outlines the development plan for the framework testing token-effi
 - `repo_map` generates a compact file and symbol tree.
 - Covered by tests.
 
-### Task 12: Semantic Retrieval Tools
+### Task 12: Semantic Retrieval Tools [DONE]
 **Description:** Integration with `Serena MCP`, `Semble MCP`, and base implementation of `Simple RAG`.
 **AC:**
 - Stubs or full MCP clients for Serena and Semble created.
