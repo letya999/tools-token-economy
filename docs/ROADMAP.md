@@ -64,13 +64,13 @@ This document outlines the development plan for the framework testing token-effi
 
 ## Phase 3: Tool Registry & Adapters
 
-### Task 9: Basic File Tools
+### Task 9: Basic File Tools [DONE]
 **Description:** Implement `read`, `read_all`, `write`, `patch`, `glob` tools in OpenCode-compatible format.
 **AC:**
 - Tool classes created, inheriting from the base interface.
 - Unit tests written for each tool.
 
-### Task 10: Grep Family Tools
+### Task 10: Grep Family Tools [DONE]
 **Description:** Implement `grep`, `git grep`, `rg` (ripgrep), `ugrep`, `semgrep`.
 **AC:**
 - Wrappers implemented calling binaries via `ShellExecutor`.
