@@ -144,7 +144,12 @@ class OpenCodeRunner:
                 "--model", self._model_flag(),
                 "--dangerously-skip-permissions", task_description,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout_sec, check=False)
+            # cwd must be the worktree so opencode reads opencode.json (provider config) from there
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                timeout=self.timeout_sec, check=False,
+                cwd=os.path.abspath(worktree_path),
+            )
 
         duration = time.time() - start_time
         m = self._parse_metrics(result.stdout)
