@@ -45,3 +45,6 @@ coverage.xml
 
 # Logs
 *.log
+
+# Environment secrets
+.env
