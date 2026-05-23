@@ -93,32 +93,15 @@ This document outlines the development plan for the framework testing token-effi
 
 ---
 
-## Phase 4: OpenCode Integration & Telemetry
+## Phase 4: OpenCode Integration & Telemetry [DONE]
 
-### Task 13: OpenCode Adapter (Runtime Adapter)
-**Description:** Integrate the framework with the OpenCode library/API to run the loop.
-**AC:**
-- `OpenCodeRunner` implemented.
-- Support for Gemini 2.5 Flash custom configurations.
-
-### Task 14: Tool Injector
-**Description:** Mechanism for dynamic tool injection into OpenCode based on the archetype.
-**AC:**
-- `OpenCodeRunner` initialized strictly with tools defined in `AgentConfig`.
-- Tests verify that redundant tools are inaccessible.
-
-### Task 15: Token Accounting
-**Description:** Precise counting of input/output/tool tokens using `tiktoken`.
-**AC:**
-- `TokenTracker` implemented.
-- Separate counts for model tokens and tool output tokens.
-- `estimated_cost` calculated.
-
-### Task 16: Metrics Aggregation & Logging
-**Description:** Save run results (JSON/YAML) and patches.
-**AC:**
-- `MetricsAggregator` implemented.
-- Output folder `results/run_<timestamp>_<config_name>/` contains all artifacts.
+### Task 13: OpenCode Adapter (Runtime Adapter) [DONE]
+...
+### Task 14: Tool Injector [DONE]
+...
+### Task 15: Token Accounting [DONE]
+...
+### Task 16: Metrics Aggregation & Logging [DONE]
 
 ---
 
