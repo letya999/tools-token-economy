@@ -26,7 +26,7 @@ def build_opencode_json(config: AgentConfig, worktree_path: str) -> dict[str, An
         "provider": {
             "google": {
                 "options": {
-                    "apiKey": "{env:GOOGLE_API_KEY}"
+                    "apiKey": "{env:GOOGLE_GENERATIVE_AI_API_KEY}"
                 }
             }
         }

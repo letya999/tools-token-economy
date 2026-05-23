@@ -20,6 +20,7 @@ from src.features.tool_registry.basic_tools import (
 from src.features.tool_registry.grep_tools import GitGrepTool, GrepTool, RgTool, SemgrepTool, UgrepTool
 from src.features.tool_registry.lsp_tools import LspSymbolsTool
 from src.features.tool_registry.semantic_tools import SembleAdapterTool, SerenaAdapterTool, SimpleRagTool
+from src.features.opencode_config import write_opencode_json
 from src.features.tool_registry.shell_tool import ShellTool
 from src.features.tool_registry.structural_tools import RepoMapTool, TreeSitterTool
 
@@ -118,6 +119,9 @@ class BenchmarkOrchestrator:
             try:
                 worktree_path = self.isolation.setup(run_id)
                 tools = self._get_tools_for_config(config, worktree_path)
+
+                if not self.dry_run:
+                    write_opencode_json(config, worktree_path)
 
                 runner = OpenCodeRunner(config, tools, mock=self.dry_run)
                 run_metrics = runner.run(task_description, worktree_path=worktree_path)
