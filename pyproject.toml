@@ -1,0 +1,14 @@
+[project]
+name = "tools-token-economy"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.13.4",
+    "pytest>=9.0.3",
+    "pytest-mock>=3.15.1",
+    "pyyaml>=6.0.3",
+    "ruff>=0.15.14",
+    "tiktoken>=0.13.0",
+]
