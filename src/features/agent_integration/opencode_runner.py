@@ -137,8 +137,9 @@ class OpenCodeRunner:
         return m
 
     def _probe_quota(self) -> tuple[bool, float]:
-        """Check Google API quota. Returns (quota_ok, retry_after_seconds).
-        Only probes for google/ models; other providers are assumed ok."""
+        """Check Google generateContent quota. Returns (quota_ok, retry_after_seconds).
+        Probes the generateContent endpoint directly — /v1beta/models has a separate
+        quota bucket and always returns 200 even when generateContent is 429."""
         if "google/" not in self._model_flag():
             return True, 0.0
         api_key = (
@@ -148,16 +149,26 @@ class OpenCodeRunner:
         )
         if not api_key:
             return True, 0.0
-        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        # Extract bare model name from e.g. "google/gemini-2.5-flash" → "gemini-2.5-flash"
+        model_id = self._model_flag().split("/", 1)[-1]
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model_id}:generateContent?key={api_key}"
+        )
+        body = json.dumps({"contents": [{"parts": [{"text": "hi"}]}]}).encode()
+        req = urllib.request.Request(
+            url, data=body, headers={"Content-Type": "application/json"}, method="POST"
+        )
         try:
-            urllib.request.urlopen(urllib.request.Request(url), timeout=8)
+            urllib.request.urlopen(req, timeout=10)
             return True, 0.0
         except urllib.error.HTTPError as exc:
             if exc.code == 429:
-                body = exc.read().decode(errors="ignore")
-                m = re.search(r"retry in ([\d.]+)s", body)
+                resp_body = exc.read().decode(errors="ignore")
+                m = re.search(r"retry in ([\d.]+)s", resp_body)
                 wait = float(m.group(1)) + 5.0 if m else 65.0
                 return False, wait
+            # 400 (bad request format) or other non-quota errors → assume quota ok
             return True, 0.0
         except Exception:
             return True, 0.0
