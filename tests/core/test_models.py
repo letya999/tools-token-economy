@@ -1,5 +1,5 @@
-import pytest
-from src.core.models import AgentConfig, RunMetrics, EvalResult
+from src.core.models import AgentConfig, RunMetrics
+
 
 def test_agent_config_validation():
     config = AgentConfig(

@@ -1,8 +1,10 @@
-import pytest
 import json
 import os
-from src.features.metrics_aggregator import MetricsAggregator
+
+import pytest
+
 from src.core.models import EvalResult, RunMetrics
+from src.features.metrics_aggregator import MetricsAggregator
 
 
 def _make_metrics(**overrides) -> RunMetrics:

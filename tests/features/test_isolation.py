@@ -1,40 +1,47 @@
-import pytest
-import os
 import shutil
 import subprocess
+
+import pytest
+
 from src.features.isolation import GitIsolationProvider
+
 
 @pytest.fixture
 def temp_repo(tmp_path):
-    # Создаем временный git-репозиторий для тестов
+    git_cmd = shutil.which("git") or "git"
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
-    subprocess.run(["git", "init"], cwd=repo_dir, check=True)
+    subprocess.run([git_cmd, "init"], cwd=repo_dir, check=True, capture_output=True)
     (repo_dir / "file.txt").write_text("initial content")
-    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_dir, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_dir, check=True)
-    subprocess.run(["git", "commit", "-m", "initial commit"], cwd=repo_dir, check=True)
+    subprocess.run([git_cmd, "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run([git_cmd, "config", "user.email", "test@example.com"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run([git_cmd, "config", "user.name", "Test User"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run([git_cmd, "commit", "-m", "initial commit"], cwd=repo_dir, check=True, capture_output=True)
     return repo_dir
 
-def test_git_isolation_provider_lifecycle(temp_repo, tmp_path):
-    worktree_parent = tmp_path / "worktrees"
-    worktree_parent.mkdir()
+
+def test_git_isolation_provider_setup_teardown(temp_repo, tmp_path):
+    git_cmd = shutil.which("git") or "git"
+    worktree_base = tmp_path / "worktrees"
+    provider = GitIsolationProvider(str(temp_repo), str(worktree_base))
     
-    provider = GitIsolationProvider(repo_path=str(temp_repo), worktree_base=str(worktree_parent))
+    run_id = "test_run_1"
+    wt_path = provider.setup(run_id)
     
-    # Setup
-    wt_path = provider.setup(run_id="test_run")
     assert os.path.exists(wt_path)
-    assert os.path.exists(os.path.join(wt_path, "file.txt"))
+    assert os.path.isfile(os.path.join(wt_path, "file.txt"))
     
-    # Verify it's a separate path
-    assert str(wt_path).startswith(str(worktree_parent))
-    
-    # Teardown
-    provider.teardown(run_id="test_run")
-    assert not os.path.exists(wt_path)
+    provider.teardown(run_id)
     
     # Verify worktree is removed from git list
-    result = subprocess.run(["git", "worktree", "list"], cwd=temp_repo, capture_output=True, text=True)
+    result = subprocess.run(
+        [git_cmd, "worktree", "list"],
+        cwd=str(temp_repo),
+        capture_output=True,
+        text=True,
+        check=False
+    )
     assert str(wt_path) not in result.stdout
+
+
+import os

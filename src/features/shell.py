@@ -1,6 +1,6 @@
 import subprocess
 from dataclasses import dataclass
-from typing import Optional
+
 
 @dataclass
 class ShellResult:
@@ -12,7 +12,7 @@ class ShellExecutor:
     """
     Executes shell commands and returns the results.
     """
-    def run(self, command: str, cwd: Optional[str] = None, timeout: Optional[float] = None) -> ShellResult:
+    def run(self, command: str, cwd: str | None = None, timeout: float | None = None) -> ShellResult:
         try:
             process = subprocess.run(
                 command,
@@ -20,15 +20,16 @@ class ShellExecutor:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
-                timeout=timeout
+                timeout=timeout,
+                check=False
             )
             return ShellResult(
                 stdout=process.stdout,
                 stderr=process.stderr,
                 exit_code=process.returncode
             )
-        except subprocess.TimeoutExpired:
-            raise TimeoutError(f"Command '{command}' timed out after {timeout} seconds")
+        except subprocess.TimeoutExpired as e:
+            raise TimeoutError(f"Command '{command}' timed out after {timeout} seconds") from e
         except Exception as e:
             return ShellResult(
                 stdout="",

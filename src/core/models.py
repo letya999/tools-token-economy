@@ -1,11 +1,12 @@
-from typing import List, Optional
+
 from pydantic import BaseModel, computed_field
+
 
 class AgentConfig(BaseModel):
     id: str
     name: str
     archetype: str
-    tools: List[str]
+    tools: list[str]
     model: str = "gemini-2.5-flash"
     max_steps: int = 50
 
@@ -24,12 +25,12 @@ class RunMetrics(BaseModel):
     files_changed: int = 0
     patch_lines: int = 0
     errors: int = 0
-    
+
     @computed_field
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens + self.tool_tokens
-    
+
     @computed_field
     @property
     def cost_usd(self) -> float:
@@ -40,15 +41,15 @@ class RunMetrics(BaseModel):
             "claude-3-5-sonnet": {"input": 3.0, "output": 15.0},
             "openrouter/deepseek/deepseek-coder": {"input": 0.1, "output": 0.1},
         }
-        
+
         # Default to gemini-2.5-flash pricing if unknown
         p = pricing.get(self.model_name, pricing["gemini-2.5-flash"])
-        
+
         input_cost = (self.input_tokens / 1_000_000) * p["input"]
         output_cost = (self.output_tokens / 1_000_000) * p["output"]
         # Tool tokens are usually sent back to input in the next turn
         tool_cost = (self.tool_tokens / 1_000_000) * p["input"]
-        
+
         return input_cost + output_cost + tool_cost
 
     @computed_field
@@ -63,5 +64,5 @@ class EvalResult(BaseModel):
     config_id: str
     metrics: RunMetrics
     success: bool
-    patch: Optional[str] = None
-    error: Optional[str] = None
+    patch: str | None = None
+    error: str | None = None

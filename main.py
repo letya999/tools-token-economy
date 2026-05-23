@@ -1,6 +1,8 @@
 import argparse
 import os
+
 from src.orchestrator.benchmark import BenchmarkOrchestrator
+
 
 def main():
     parser = argparse.ArgumentParser(description="Tools Token Economy Benchmark Framework")
@@ -10,7 +12,7 @@ def main():
     parser.add_argument("--test-cmd", default="pytest", help="Command to run tests")
     parser.add_argument("--worktree-base", default="worktrees", help="Base directory for temporary worktrees")
     parser.add_argument("--task", required=True, help="Task description for the agent")
-    parser.add_argument("--dry-run", action="store_true", 
+    parser.add_argument("--dry-run", action="store_true",
                         help="Run with mock agent (skips real API calls, uses simulated responses)")
 
     args = parser.parse_args()

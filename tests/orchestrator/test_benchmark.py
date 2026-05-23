@@ -1,9 +1,11 @@
-import pytest
 import os
 from unittest.mock import MagicMock, patch
-from src.orchestrator.benchmark import BenchmarkOrchestrator
-from src.core.models import RunMetrics, AgentConfig
+
+import pytest
+
+from src.core.models import AgentConfig, RunMetrics
 from src.features.evaluation import EvalOutcome
+from src.orchestrator.benchmark import BenchmarkOrchestrator
 
 
 def _mock_run_metrics(**overrides) -> RunMetrics:

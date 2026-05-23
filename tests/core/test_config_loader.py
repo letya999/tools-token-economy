@@ -1,15 +1,15 @@
-import pytest
 import os
+
 from src.core.config_loader import load_benchmark_configs
-from src.core.models import AgentConfig
+
 
 def test_load_benchmark_configs():
     configs_path = "configs/benchmark_configs.yaml"
     # Ensure file exists (it was created in previous step)
     assert os.path.exists(configs_path)
-    
+
     configs = load_benchmark_configs(configs_path)
-    
+
     assert len(configs) == 20
     assert configs[0].id == "01_cursor_like"
     assert "repo_map" in configs[0].tools

@@ -1,7 +1,10 @@
 import os
+
 import tree_sitter_python as tspython
 from tree_sitter import Language, Parser, Query, QueryCursor
+
 from src.core.tools import BaseTool, ToolResult
+
 
 class TreeSitterTool(BaseTool):
     """
@@ -25,14 +28,14 @@ class TreeSitterTool(BaseTool):
             tree = self.parser.parse(content)
             # Извлекаем только важные узлы (функции, классы) для экономии токенов
             symbols = []
-            
+
             query_str = """
                 (function_definition name: (identifier) @func.name)
                 (class_definition name: (identifier) @class.name)
             """
             query = Query(self.PY_LANGUAGE, query_str)
             cursor = QueryCursor(query)
-            
+
             captures = cursor.captures(tree.root_node)
             for tag, nodes in captures.items():
                 for node in nodes:
@@ -56,11 +59,11 @@ class RepoMapTool(BaseTool):
 
     def execute(self, depth: int = 2) -> ToolResult:
         repo_map = []
-        
+
         for root, dirs, files in os.walk(self.worktree_path):
             # Пропускаем скрытые папки и venv
             dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('venv', '__pycache__')]
-            
+
             rel_root = os.path.relpath(root, self.worktree_path)
             if rel_root == ".":
                 rel_root = ""
@@ -69,7 +72,7 @@ class RepoMapTool(BaseTool):
                 if file.endswith(".py"):
                     rel_path = os.path.join(rel_root, file)
                     symbols_res = self.ts_tool.execute(rel_path)
-                    
+
                     file_header = f"FILE: {rel_path}"
                     symbols_content = "  " + symbols_res.output.replace("\n", "\n  ")
                     repo_map.append(f"{file_header}\n{symbols_content}")

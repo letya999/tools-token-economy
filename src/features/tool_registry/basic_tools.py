@@ -1,7 +1,9 @@
-import os
 import glob
+import os
+
 from src.core.tools import BaseTool, ToolResult
 from src.features.patch import PatchApplier
+
 
 class FileReadTool(BaseTool):
     def __init__(self, worktree_path: str):
@@ -12,16 +14,15 @@ class FileReadTool(BaseTool):
         full_path = os.path.join(self.worktree_path, file_path)
         if not os.path.isfile(full_path):
             return self.format_result(f"Error: File not found: {file_path}")
-            
+
         try:
-            with open(full_path, "r", encoding="utf-8") as f:
+            with open(full_path, encoding="utf-8") as f:
                 lines = f.readlines()
-                
-            if start_line < 1:
-                start_line = 1
+
+            start_line = max(start_line, 1)
             if end_line == -1 or end_line > len(lines):
                 end_line = len(lines)
-                
+
             selected_lines = lines[start_line - 1 : end_line]
             output = "".join(selected_lines)
             return self.format_result(output)
@@ -40,7 +41,7 @@ class ReadAllTool(BaseTool):
             for file in files:
                 rel_path = os.path.relpath(os.path.join(root, file), self.worktree_path)
                 try:
-                    with open(os.path.join(root, file), "r", encoding="utf-8") as f:
+                    with open(os.path.join(root, file), encoding="utf-8") as f:
                         content = f.read()
                         output.append(f"--- FILE: {rel_path} ---\n{content}")
                 except Exception:
@@ -55,7 +56,7 @@ class FileWriteTool(BaseTool):
     def execute(self, file_path: str, content: str) -> ToolResult:
         full_path = os.path.join(self.worktree_path, file_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        
+
         try:
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(content)

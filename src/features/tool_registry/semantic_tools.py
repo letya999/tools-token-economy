@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+
 from src.core.tools import BaseTool, ToolResult
 from src.features.mcp_client import McpToolClient
 
@@ -12,13 +12,13 @@ except ImportError:
 
 class SimpleRagTool(BaseTool):
     """
-    Реализация простого RAG через BM25 для поиска по содержимому файлов.
+    Simple RAG implementation using BM25 for file content retrieval.
     """
     def __init__(self, worktree_path: str):
         super().__init__("simple_rag", "Semantic-ish retrieval using BM25 over file contents")
         self.worktree_path = worktree_path
 
-    def _get_all_python_files(self) -> List[str]:
+    def _get_all_python_files(self) -> list[str]:
         files_to_index = []
         for root, dirs, files in os.walk(self.worktree_path):
             dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('venv', '__pycache__')]
@@ -37,10 +37,10 @@ class SimpleRagTool(BaseTool):
 
         corpus = []
         file_map = []
-        
+
         for f_path in files:
             try:
-                with open(f_path, "r", encoding="utf-8") as f:
+                with open(f_path, encoding="utf-8") as f:
                     content = f.read()
                     corpus.append(content.lower().split())
                     file_map.append(f_path)
@@ -52,16 +52,14 @@ class SimpleRagTool(BaseTool):
 
         bm25 = BM25Okapi(corpus)
         tokenized_query = query.lower().split()
-        
-        # Получаем лучшие документы
+
         top_n = bm25.get_top_n(tokenized_query, file_map, n=top_k)
-        
+
         results = []
         for full_path in top_n:
             rel_path = os.path.relpath(full_path, self.worktree_path)
-            # Извлекаем краткий контекст (первые 500 символов)
             try:
-                with open(full_path, "r", encoding="utf-8") as f:
+                with open(full_path, encoding="utf-8") as f:
                     snippet = f.read(500).strip()
                 results.append(f"FILE: {rel_path}\nSNIPPET: {snippet}...")
             except Exception:
@@ -72,18 +70,17 @@ class SimpleRagTool(BaseTool):
 
 class SerenaAdapterTool(BaseTool):
     """
-    Инструмент для семантического поиска (Serena). 
-    Использует персистентный MCP-клиент.
+    Semantic search tool using Serena MCP.
+    Uses persistent MCP client.
     """
     def __init__(self, worktree_path: str):
         super().__init__("serena", "Semantic retrieval for codebase using Serena MCP")
         self.worktree_path = worktree_path
         self.rag_engine = SimpleRagTool(worktree_path)
-        self._client: Optional[McpToolClient] = None
+        self._client: McpToolClient | None = None
 
     def _get_client(self) -> McpToolClient:
         if self._client is None:
-            # Prefer 'serena' command if available, else use uvx
             self._client = McpToolClient(
                 server_command="serena",
                 server_args=["start-mcp-server", "--project", self.worktree_path],
@@ -96,7 +93,6 @@ class SerenaAdapterTool(BaseTool):
             result = client.call_tool("find_symbol", {"query": query})
             return self.format_result(result)
         except Exception:
-            # Fallback to simple RAG
             return self.rag_engine.execute(query=query)
 
     def close(self):
@@ -109,17 +105,16 @@ class SerenaAdapterTool(BaseTool):
 
 class SembleAdapterTool(BaseTool):
     """
-    Инструмент для структурной навигации (Semble).
+    Structural navigation tool using Semble MCP.
     """
     def __init__(self, worktree_path: str):
         super().__init__("semble", "Structural navigation using Semble MCP")
         self.worktree_path = worktree_path
         self.rag_engine = SimpleRagTool(worktree_path)
-        self._client: Optional[McpToolClient] = None
+        self._client: McpToolClient | None = None
 
     def _get_client(self) -> McpToolClient:
         if self._client is None:
-            # Semble might be installed via npm/pip or accessible via its own CLI
             self._client = McpToolClient(
                 server_command="semble",
                 server_args=["mcp", "--path", self.worktree_path],

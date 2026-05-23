@@ -1,37 +1,47 @@
 from typing import Protocol
-from pydantic import BaseModel
+
 import tiktoken
+from pydantic import BaseModel
+
 
 class ToolResult(BaseModel):
+    """
+    Result of a tool execution.
+    """
     output: str
-    token_count: int
+    tokens: int
+
+
+class Tool(Protocol):
+    """
+    Protocol for all tools in the benchmark.
+    """
+    name: str
+    description: str
+
+    def execute(self, **kwargs) -> ToolResult:
+        ...
+
 
 class BaseTool:
     """
-    Базовый класс для всех инструментов с утилитами для подсчета токенов.
+    Base class for all tools with token counting utilities.
     """
     def __init__(self, name: str, description: str):
         self.name = name
         self.description = description
-        # Используем стандартный энкодер (например, от GPT-4/3.5) как прокси 
-        # для универсального бенчмарка, если нет специфичного для Gemini.
+        # Standard tokenizer (e.g. GPT-4/3.5) as a proxy for universal benchmarking
         self._tokenizer = tiktoken.get_encoding("cl100k_base")
 
     def count_tokens(self, text: str) -> int:
-        """Считает количество токенов в строке."""
+        """Counts tokens in the given text."""
         if not text:
             return 0
         return len(self._tokenizer.encode(text))
 
     def format_result(self, output: str) -> ToolResult:
-        """Оборачивает вывод в ToolResult с подсчетом токенов."""
+        """Wraps output into ToolResult with token count."""
         return ToolResult(
             output=output,
-            token_count=self.count_tokens(output)
+            tokens=self.count_tokens(output)
         )
-
-class Tool(Protocol):
-    name: str
-    description: str
-    def execute(self, **kwargs) -> ToolResult:
-        ...

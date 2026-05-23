@@ -3,10 +3,11 @@ Persistent MCP client for connecting to stdio-based MCP servers (Serena, Semble)
 Uses a background thread to maintain a persistent connection across synchronous calls.
 """
 import asyncio
-import threading
-import queue
 import json
-from typing import Any, Optional, List
+import queue
+import threading
+from typing import Any
+
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -17,7 +18,7 @@ class McpToolClient:
     Spawns the MCP server as a subprocess and maintains a single connection.
     """
 
-    def __init__(self, server_command: str, server_args: list[str], cwd: Optional[str] = None):
+    def __init__(self, server_command: str, server_args: list[str], cwd: str | None = None):
         self.server_params = StdioServerParameters(
             command=server_command,
             args=server_args,
@@ -41,14 +42,14 @@ class McpToolClient:
         async with stdio_client(self.server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                
+
                 while not self._stop_event.is_set():
                     try:
                         # Non-blocking check for requests
                         request = self._request_queue.get(timeout=0.1)
                         if request is None:
                             break
-                        
+
                         method, args = request
                         if method == "call_tool":
                             result = await session.call_tool(*args)
@@ -56,7 +57,7 @@ class McpToolClient:
                         elif method == "list_tools":
                             result = await session.list_tools()
                             self._response_queue.put([t.name for t in result.tools])
-                            
+
                     except queue.Empty:
                         continue
                     except Exception as e:
@@ -82,7 +83,7 @@ class McpToolClient:
             raise result
         return result
 
-    def list_tools(self) -> List[str]:
+    def list_tools(self) -> list[str]:
         """Return list of tool names available on the server."""
         self._request_queue.put(("list_tools", ()))
         result = self._response_queue.get(timeout=10)

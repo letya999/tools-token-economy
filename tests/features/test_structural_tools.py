@@ -1,6 +1,8 @@
+
 import pytest
-import os
-from src.features.tool_registry.structural_tools import TreeSitterTool, RepoMapTool
+
+from src.features.tool_registry.structural_tools import RepoMapTool, TreeSitterTool
+
 
 @pytest.fixture
 def temp_python_repo(tmp_path):
@@ -13,15 +15,15 @@ def temp_python_repo(tmp_path):
 def test_tree_sitter_tool(temp_python_repo):
     tool = TreeSitterTool(worktree_path=temp_python_repo)
     res = tool.execute(file_path="main.py")
-    
+
     assert "func.name: main" in res.output
     assert "class.name: Worker" in res.output
-    assert res.token_count > 0
+    assert res.tokens > 0
 
 def test_repo_map_tool(temp_python_repo):
     tool = RepoMapTool(worktree_path=temp_python_repo)
     res = tool.execute()
-    
+
     assert "main.py" in res.output
     assert "utils.py" in res.output
     assert "main" in res.output

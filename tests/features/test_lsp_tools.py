@@ -1,5 +1,6 @@
+
 import pytest
-import os
+
 from src.features.tool_registry.lsp_tools import LspSymbolsTool
 
 
@@ -27,7 +28,7 @@ def test_lsp_symbols_by_file(python_repo):
     res = tool.execute(file_path="models.py")
     assert "User" in res.output
     assert "create_user" in res.output
-    assert res.token_count > 0
+    assert res.tokens > 0
 
 
 def test_lsp_symbols_by_file_includes_line_numbers(python_repo):
@@ -65,4 +66,5 @@ def test_lsp_symbols_no_args_returns_error(python_repo):
 def test_lsp_symbols_nonexistent_symbol(python_repo):
     tool = LspSymbolsTool(python_repo)
     res = tool.execute(symbol="totally_nonexistent_xyz")
-    assert "No symbols found" in res.output or res.output.strip() == ""
+    assert "not found" in res.output or res.output.strip() == ""
+

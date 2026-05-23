@@ -1,7 +1,8 @@
 import re
-from typing import Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
 from src.features.shell import ShellExecutor
+
 
 @dataclass
 class EvalOutcome:
@@ -11,7 +12,7 @@ class EvalOutcome:
     tests_passed: int = 0
     tests_failed: int = 0
     tests_total: int = 0
-    patch: Optional[str] = None
+    patch: str | None = None
 
 class EvalEngine:
     """
@@ -24,7 +25,7 @@ class EvalEngine:
         re.IGNORECASE,
     )
 
-    def __init__(self, shell: Optional[ShellExecutor] = None):
+    def __init__(self, shell: ShellExecutor | None = None):
         self.shell = shell or ShellExecutor()
 
     def _parse_pytest_counts(self, output: str) -> tuple[int, int]:

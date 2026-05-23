@@ -1,5 +1,5 @@
 import time
-from typing import Optional
+
 
 class RateLimiter:
     """
@@ -8,7 +8,7 @@ class RateLimiter:
     """
     def __init__(self, requests_per_minute: int):
         self.delay = 60.0 / requests_per_minute
-        self.last_call_time: Optional[float] = None
+        self.last_call_time: float | None = None
 
     def __enter__(self):
         if self.last_call_time is not None:

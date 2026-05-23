@@ -1,6 +1,9 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
+
 from src.features.shell import ShellExecutor
+
 
 def test_shell_executor_success():
     executor = ShellExecutor()

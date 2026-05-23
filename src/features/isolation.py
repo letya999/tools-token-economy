@@ -1,7 +1,7 @@
 import os
-import subprocess
 import shutil
-from typing import Dict
+import subprocess
+
 
 class GitIsolationProvider:
     """
@@ -10,24 +10,25 @@ class GitIsolationProvider:
     def __init__(self, repo_path: str, worktree_base: str):
         self.repo_path = os.path.abspath(repo_path)
         self.worktree_base = os.path.abspath(worktree_base)
-        self.active_worktrees: Dict[str, str] = {}
+        self.active_worktrees: dict[str, str] = {}
+        self.git_cmd = shutil.which("git") or "git"
 
     def setup(self, run_id: str) -> str:
         """
         Creates a new worktree for a specific run.
         """
         wt_path = os.path.join(self.worktree_base, run_id)
-        
+
         if os.path.exists(wt_path):
             shutil.rmtree(wt_path)
-            
+
         subprocess.run(
-            ["git", "worktree", "add", wt_path, "HEAD"],
+            [self.git_cmd, "worktree", "add", wt_path, "HEAD"],
             cwd=self.repo_path,
             check=True,
             capture_output=True
         )
-        
+
         self.active_worktrees[run_id] = wt_path
         return wt_path
 
@@ -40,13 +41,14 @@ class GitIsolationProvider:
             return
 
         subprocess.run(
-            ["git", "worktree", "remove", "--force", wt_path],
+            [self.git_cmd, "worktree", "remove", "--force", wt_path],
             cwd=self.repo_path,
             check=True,
             capture_output=True
         )
-        
+
         if os.path.exists(wt_path):
             shutil.rmtree(wt_path, ignore_errors=True)
-            
-        del self.active_worktrees[run_id]
+
+        if run_id in self.active_worktrees:
+            del self.active_worktrees[run_id]

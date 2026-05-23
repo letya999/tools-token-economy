@@ -1,7 +1,9 @@
-import os
-import json
 import glob as glob_module
+import json
+import os
+
 from src.core.models import EvalResult
+
 
 class MetricsAggregator:
     """
@@ -50,7 +52,7 @@ class MetricsAggregator:
             run_dir = os.path.dirname(metrics_file)
             run_name = os.path.basename(run_dir)
             try:
-                with open(metrics_file, "r", encoding="utf-8") as f:
+                with open(metrics_file, encoding="utf-8") as f:
                     data = json.load(f)
                 rows.append({
                     "run": run_name,

@@ -1,6 +1,8 @@
 import shlex
+
 from src.core.tools import BaseTool, ToolResult
 from src.features.shell import ShellExecutor
+
 
 class GrepTool(BaseTool):
     def __init__(self, worktree_path: str):
@@ -12,13 +14,13 @@ class GrepTool(BaseTool):
         safe_pattern = shlex.quote(pattern)
         cmd = f"grep -rnI {safe_pattern} ."
         result = self.shell.run(cmd, cwd=self.worktree_path)
-        
+
         output = result.stdout.strip()
         if not output and result.stderr:
             output = result.stderr.strip()
         elif not output:
             output = "No matches found."
-            
+
         return self.format_result(output)
 
 class GitGrepTool(BaseTool):
@@ -31,13 +33,13 @@ class GitGrepTool(BaseTool):
         safe_pattern = shlex.quote(pattern)
         cmd = f"git grep -n {safe_pattern}"
         result = self.shell.run(cmd, cwd=self.worktree_path)
-        
+
         output = result.stdout.strip()
         if not output and result.stderr:
             output = result.stderr.strip()
         elif not output:
             output = "No matches found."
-            
+
         return self.format_result(output)
 
 class RgTool(BaseTool):
@@ -50,13 +52,13 @@ class RgTool(BaseTool):
         safe_pattern = shlex.quote(pattern)
         cmd = f"rg -n {safe_pattern}"
         result = self.shell.run(cmd, cwd=self.worktree_path)
-        
+
         output = result.stdout.strip()
         if not output and result.stderr:
             output = result.stderr.strip()
         elif not output:
             output = "No matches found."
-            
+
         return self.format_result(output)
 
 class UgrepTool(BaseTool):
@@ -69,13 +71,13 @@ class UgrepTool(BaseTool):
         safe_pattern = shlex.quote(pattern)
         cmd = f"ugrep -n {safe_pattern}"
         result = self.shell.run(cmd, cwd=self.worktree_path)
-        
+
         output = result.stdout.strip()
         if not output and result.stderr:
             output = result.stderr.strip()
         elif not output:
             output = "No matches found."
-            
+
         return self.format_result(output)
 
 class SemgrepTool(BaseTool):
@@ -88,11 +90,11 @@ class SemgrepTool(BaseTool):
         safe_pattern = shlex.quote(pattern)
         cmd = f"semgrep --pattern {safe_pattern} --quiet"
         result = self.shell.run(cmd, cwd=self.worktree_path)
-        
+
         output = result.stdout.strip()
         if not output and result.stderr:
             output = result.stderr.strip()
         elif not output:
             output = "No matches found."
-            
+
         return self.format_result(output)

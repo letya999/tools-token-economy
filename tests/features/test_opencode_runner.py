@@ -1,10 +1,12 @@
-import pytest
 import json
-import os
 from unittest.mock import MagicMock, patch
-from src.features.agent_integration.opencode_runner import OpenCodeRunner
+
+import pytest
+
 from src.core.models import AgentConfig
 from src.core.tools import Tool
+from src.features.agent_integration.opencode_runner import OpenCodeRunner
+
 
 @pytest.fixture(autouse=True)
 def dummy_env():
@@ -37,7 +39,7 @@ def test_opencode_runner_mock_mode(agent_config, mock_tool):
     """Verify mock mode returns simulated metrics."""
     runner = OpenCodeRunner(config=agent_config, tools=[mock_tool], mock=True)
     result = runner.run(task_description="Do something")
-    
+
     assert result.success is True
     assert result.eval_score == 1.0
     assert result.model_calls == 1

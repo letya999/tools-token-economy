@@ -1,7 +1,9 @@
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from src.features.tool_registry.shell_tool import ShellTool
+
 from src.features.shell import ShellResult
+from src.features.tool_registry.shell_tool import ShellTool
 
 
 @pytest.fixture
@@ -16,7 +18,7 @@ def test_shell_tool_runs_command(repo):
         mock_run.return_value = ShellResult(stdout="hello world", stderr="", exit_code=0)
         res = tool.execute(command="echo hello world")
     assert "hello world" in res.output
-    assert res.token_count > 0
+    assert res.tokens > 0
     mock_run.assert_called_once_with("echo hello world", cwd=repo, timeout=30.0)
 
 
