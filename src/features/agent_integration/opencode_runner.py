@@ -35,10 +35,11 @@ class OpenCodeRunner:
     In mock/dry-run mode, skips the CLI entirely.
     """
 
-    def __init__(self, config: AgentConfig, tools: list[Tool], mock: bool = False):
+    def __init__(self, config: AgentConfig, tools: list[Tool], mock: bool = False, timeout_sec: int = 600):
         self.config = config
         self.tools = tools
         self.mock = mock
+        self.timeout_sec = timeout_sec
         # Use cl100k_base as a general approximation for token counting fallback
         try:
             self._tokenizer = tiktoken.get_encoding("cl100k_base")
@@ -143,7 +144,7 @@ class OpenCodeRunner:
                 "--model", self._model_flag(),
                 "--dangerously-skip-permissions", task_description,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout_sec, check=False)
 
         duration = time.time() - start_time
         m = self._parse_metrics(result.stdout)

@@ -1,3 +1,13 @@
+benchmark:
+  repo: "C:\\Users\\User\\a_projects\\process_metrics_platform_v2"
+  test_cmd: "uv run pytest tests/unit/ -x -q --timeout=60"
+  timeout_sec: 1200
+  task: >
+    Increase test coverage for Google OAuth authentication in the admin panel.
+    Add missing test cases to tests/unit/test_api_google_oauth.py and
+    tests/unit/test_google_auth_service.py covering edge cases like invalid tokens,
+    expired sessions, missing scopes, and error responses from Google API.
+
 configs:
   - id: "01_cursor_like"
     name: "Cursor-like"

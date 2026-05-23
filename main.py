@@ -1,8 +1,10 @@
 import argparse
 import os
+import sys
 
 from dotenv import load_dotenv
 
+from src.core.config_loader import load_benchmark_meta
 from src.orchestrator.benchmark import BenchmarkOrchestrator
 
 load_dotenv()
@@ -10,35 +12,37 @@ load_dotenv()
 
 def main():
     parser = argparse.ArgumentParser(description="Tools Token Economy Benchmark Framework")
-    parser.add_argument("--repo", required=True, help="Path to the target repository")
     parser.add_argument("--configs", default="configs/benchmark_configs.yaml", help="Path to the configs YAML")
     parser.add_argument("--results", default="results", help="Directory to save results")
-    parser.add_argument("--test-cmd", default="pytest", help="Command to run tests")
     parser.add_argument("--worktree-base", default="worktrees", help="Base directory for temporary worktrees")
-    task_group = parser.add_mutually_exclusive_group(required=True)
-    task_group.add_argument("--task", help="Task description for the agent")
-    task_group.add_argument("--task-file", help="Path to a file containing the task description (e.g. configs/current_task.txt)")
+    parser.add_argument("--repo", help="Override repo path from YAML")
+    parser.add_argument("--task", help="Override task from YAML")
+    parser.add_argument("--test-cmd", help="Override test command from YAML")
     parser.add_argument("--dry-run", action="store_true",
                         help="Run with mock agent (skips real API calls, uses simulated responses)")
 
     args = parser.parse_args()
 
-    if args.task_file:
-        with open(args.task_file, encoding="utf-8") as f:
-            task = f.read().strip()
-    else:
-        task = args.task
+    meta = load_benchmark_meta(args.configs)
 
-    # Ensure results directory exists
+    repo = args.repo or (meta.repo if meta else None)
+    task = args.task or (meta.task if meta else None)
+    test_cmd = args.test_cmd or (meta.test_cmd if meta else "pytest")
+    timeout_sec = meta.timeout_sec if meta else 600
+
+    if not repo or not task:
+        parser.error("repo and task must be set via --repo/--task or benchmark.yaml benchmark: section")
+
     os.makedirs(args.results, exist_ok=True)
 
     orchestrator = BenchmarkOrchestrator(
-        repo_path=args.repo,
+        repo_path=repo,
         configs_path=args.configs,
         results_dir=args.results,
-        test_cmd=args.test_cmd,
+        test_cmd=test_cmd,
         worktree_base=args.worktree_base,
-        dry_run=args.dry_run
+        dry_run=args.dry_run,
+        timeout_sec=timeout_sec,
     )
 
     orchestrator.run_suite(task)

@@ -38,6 +38,7 @@ class BenchmarkOrchestrator:
         test_cmd: str,
         worktree_base: str = "worktrees",
         dry_run: bool = False,
+        timeout_sec: int = 600,
     ):
         self.repo_path = os.path.abspath(repo_path)
         self.configs = load_benchmark_configs(configs_path)
@@ -45,6 +46,7 @@ class BenchmarkOrchestrator:
         self.worktree_base = os.path.abspath(worktree_base)
         self.test_cmd = test_cmd
         self.dry_run = dry_run
+        self.timeout_sec = timeout_sec
         self.aggregator = MetricsAggregator(self.results_dir)
         self.isolation = GitIsolationProvider(self.repo_path, self.worktree_base)
         self.eval_engine = EvalEngine()
@@ -123,7 +125,7 @@ class BenchmarkOrchestrator:
                 if not self.dry_run:
                     write_opencode_json(config, worktree_path)
 
-                runner = OpenCodeRunner(config, tools, mock=self.dry_run)
+                runner = OpenCodeRunner(config, tools, mock=self.dry_run, timeout_sec=self.timeout_sec)
                 run_metrics = runner.run(task_description, worktree_path=worktree_path)
 
                 eval_res = self.eval_engine.evaluate(worktree_path, self.test_cmd)

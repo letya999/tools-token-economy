@@ -2,6 +2,13 @@
 from pydantic import BaseModel, computed_field
 
 
+class BenchmarkMeta(BaseModel):
+    repo: str
+    task: str
+    test_cmd: str = "pytest"
+    timeout_sec: int = 600
+
+
 class AgentConfig(BaseModel):
     id: str
     name: str
