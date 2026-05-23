@@ -194,18 +194,18 @@ class OpenCodeRunner:
             wsl_dir = _win_to_wsl_path(abs_path)
             # Escape single-quotes in task_description for bash -c '...'
             safe_task = task_description.replace("'", "'\\''")
-            # Source nvm explicitly so nvm-installed node/opencode take priority over
-            # Windows-mounted binaries in /mnt/c
+            # Source nvm so nvm-managed node/opencode are active; also add
+            # ~/.local/bin (uv, rg, etc.) to PATH
             bash_cmd = (
                 'export NVM_DIR="$HOME/.nvm" && '
-                '[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh" && '
-                'export PATH="$HOME/.local/bin:$NVM_DIR/versions/node/$(nvm current)/bin:$PATH" && '
+                '. "$NVM_DIR/nvm.sh" 2>/dev/null; '
+                'export PATH="$HOME/.local/bin:$PATH" && '
                 f"cd '{wsl_dir}' && "
                 f"opencode run --format json --dir '{wsl_dir}' "
                 f"--model '{model_flag}' "
                 f"--dangerously-skip-permissions '{safe_task}'"
             )
-            cmd = ["wsl", "bash", "-lc", bash_cmd]
+            cmd = ["wsl", "bash", "-c", bash_cmd]
         else:
             cmd = [
                 _resolve_opencode_exe(),
