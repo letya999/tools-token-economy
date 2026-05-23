@@ -18,6 +18,17 @@ from src.core.tools import Tool
 from src.features.rate_limiter import RateLimiter
 
 
+def _resolve_opencode_exe() -> str:
+    """Find the opencode executable, preferring the direct .exe over a .cmd wrapper on Windows."""
+    cmd_path = shutil.which("opencode")
+    if sys.platform == "win32" and cmd_path and cmd_path.lower().endswith(".cmd"):
+        # npm .CMD wrapper: C:\<prefix>\opencode.CMD -> C:\<prefix>\node_modules\opencode-ai\bin\opencode.exe
+        exe = os.path.join(os.path.dirname(cmd_path), "node_modules", "opencode-ai", "bin", "opencode.exe")
+        if os.path.exists(exe):
+            return exe
+    return cmd_path or "opencode"
+
+
 class OpenCodeRunner:
     """
     Runs OpenCode CLI as a subprocess and collects metrics from its JSONL output.
@@ -125,18 +136,13 @@ class OpenCodeRunner:
             return self._run_mock(task_description, start_time)
 
         with self._rate_limiter:
-            opencode_cmd = shutil.which("opencode") or "opencode"
-            run_args = [
+            cmd = [
+                _resolve_opencode_exe(),
                 "run", "--format", "json",
                 "--dir", os.path.abspath(worktree_path),
                 "--model", self._model_flag(),
                 "--dangerously-skip-permissions", task_description,
             ]
-            # On Windows, .cmd/.ps1 scripts require cmd /c to execute via CreateProcess
-            if sys.platform == "win32" and opencode_cmd.lower().endswith((".cmd", ".ps1")):
-                cmd = ["cmd", "/c", opencode_cmd] + run_args
-            else:
-                cmd = [opencode_cmd] + run_args
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
 
         duration = time.time() - start_time
