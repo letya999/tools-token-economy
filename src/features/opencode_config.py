@@ -23,10 +23,17 @@ def build_opencode_json(config: AgentConfig, worktree_path: str) -> dict[str, An
     """
     cfg: dict[str, Any] = {"$schema": "https://opencode.ai/config.json"}
 
-    # Only add provider block if key is available; opencode also reads env directly
-    api_key = os.getenv("GOOGLE_GENERATIVE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if api_key:
-        cfg["provider"] = {"google": {"options": {"apiKey": api_key}}}
+    # Inject provider API keys so opencode doesn't need them in the shell env
+    openai_key = os.getenv("OPENAI_API_KEY")
+    google_key = os.getenv("GOOGLE_GENERATIVE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+
+    providers: dict[str, Any] = {}
+    if openai_key:
+        providers["openai"] = {"apiKey": openai_key}
+    if google_key:
+        providers["google"] = {"options": {"apiKey": google_key}}
+    if providers:
+        cfg["provider"] = providers
 
     # MCP server entries for semantic tools
     mcp: dict[str, Any] = {}

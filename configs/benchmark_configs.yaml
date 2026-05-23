@@ -13,138 +13,138 @@ configs:
     name: "Cursor-like"
     archetype: "cursor"
     tools: ["repo_map", "simple_rag", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 50
 
   - id: "02_claude_code_like"
     name: "Claude Code-like"
     archetype: "claude"
     tools: ["glob", "rg", "read", "shell", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 50
 
   - id: "03_gemini_like"
     name: "Gemini-like"
     archetype: "gemini"
     tools: ["repo_map", "read_all", "rg", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 50
 
   - id: "04_codex_like"
     name: "Codex-like"
     archetype: "codex"
     tools: ["grep", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 50
 
   - id: "05_read_only"
     name: "Mechanism: Read Only"
     archetype: "ablation"
     tools: ["read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "06_read_all"
     name: "Mechanism: Read All"
     archetype: "ablation"
     tools: ["read_all", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "07_grep"
     name: "Mechanism: Grep"
     archetype: "ablation"
     tools: ["grep", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "08_git_grep"
     name: "Mechanism: Git Grep"
     archetype: "ablation"
     tools: ["git_grep", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "09_rg"
     name: "Mechanism: Ripgrep"
     archetype: "ablation"
     tools: ["rg", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "10_ugrep"
     name: "Mechanism: Ugrep"
     archetype: "ablation"
     tools: ["ugrep", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "11_semgrep"
     name: "Mechanism: Semgrep"
     archetype: "ablation"
     tools: ["semgrep", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "12_tree_sitter"
     name: "Mechanism: Tree-sitter"
     archetype: "ablation"
     tools: ["tree_sitter", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "13_lsp"
     name: "Mechanism: LSP Symbols"
     archetype: "ablation"
     tools: ["lsp_symbols", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "14_repo_map"
     name: "Mechanism: Repo Map"
     archetype: "ablation"
     tools: ["repo_map", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "15_simple_rag"
     name: "Mechanism: Simple RAG"
     archetype: "ablation"
     tools: ["simple_rag", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 30
 
   - id: "16_serena_only"
     name: "Semantic: Serena Only"
     archetype: "semantic"
     tools: ["serena", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 40
 
   - id: "17_semble_only"
     name: "Semantic: Semble Only"
     archetype: "semantic"
     tools: ["semble", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 40
 
   - id: "18_rg_repo_map"
     name: "Hybrid: RG + Repo Map"
     archetype: "hybrid"
     tools: ["repo_map", "rg", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 50
 
   - id: "19_rg_lsp"
     name: "Hybrid: RG + LSP"
     archetype: "hybrid"
     tools: ["rg", "lsp_symbols", "read", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 50
 
   - id: "20_serena_semble"
     name: "Hybrid: Serena + Semble"
     archetype: "hybrid"
     tools: ["serena", "semble", "patch", "test"]
-    model: "gemini-2.5-flash"
+    model: "openai/gpt-4o-mini"
     max_steps: 50

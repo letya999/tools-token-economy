@@ -37,6 +37,16 @@ def _resolve_opencode_exe() -> str:
     return cmd_path or "opencode"
 
 
+def _win_to_wsl_path(win_path: str) -> str:
+    """Convert C:\\foo\\bar to /mnt/c/foo/bar for WSL access."""
+    m = re.match(r'^([A-Za-z])[:/\\](.*)', win_path.replace("\\", "/"))
+    if m:
+        drive = m.group(1).lower()
+        rest = m.group(2).lstrip("/")
+        return f"/mnt/{drive}/{rest}"
+    return win_path
+
+
 class OpenCodeRunner:
     """
     Runs OpenCode CLI as a subprocess and collects metrics from its JSONL output.
@@ -176,18 +186,39 @@ class OpenCodeRunner:
     def _run_with_model(
         self, model_flag: str, task_description: str, worktree_path: str
     ) -> subprocess.CompletedProcess:
-        """Run opencode subprocess with the given model flag."""
-        cmd = [
-            _resolve_opencode_exe(),
-            "run", "--format", "json",
-            "--dir", os.path.abspath(worktree_path),
-            "--model", model_flag,
-            "--dangerously-skip-permissions", task_description,
-        ]
+        """Run opencode via WSL on Windows, or directly on Linux/Mac."""
+        abs_path = os.path.abspath(worktree_path)
+
+        if sys.platform == "win32":
+            # Run opencode inside WSL so it can use native Linux tools (rg, bash, etc.)
+            wsl_dir = _win_to_wsl_path(abs_path)
+            # Escape single-quotes in task_description for bash -c '...'
+            safe_task = task_description.replace("'", "'\\''")
+            # Source nvm explicitly so nvm-installed node/opencode take priority over
+            # Windows-mounted binaries in /mnt/c
+            bash_cmd = (
+                'export NVM_DIR="$HOME/.nvm" && '
+                '[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh" && '
+                'export PATH="$HOME/.local/bin:$NVM_DIR/versions/node/$(nvm current)/bin:$PATH" && '
+                f"cd '{wsl_dir}' && "
+                f"opencode run --format json --dir '{wsl_dir}' "
+                f"--model '{model_flag}' "
+                f"--dangerously-skip-permissions '{safe_task}'"
+            )
+            cmd = ["wsl", "bash", "-lc", bash_cmd]
+        else:
+            cmd = [
+                _resolve_opencode_exe(),
+                "run", "--format", "json",
+                "--dir", abs_path,
+                "--model", model_flag,
+                "--dangerously-skip-permissions", task_description,
+            ]
+
         return subprocess.run(
             cmd, capture_output=True, text=True,
             timeout=self.timeout_sec, check=False,
-            cwd=os.path.abspath(worktree_path),
+            cwd=abs_path,
         )
 
     def run(self, task_description: str, worktree_path: str = ".") -> RunMetrics:
