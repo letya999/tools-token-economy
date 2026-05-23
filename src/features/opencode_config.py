@@ -21,14 +21,23 @@ def build_opencode_json(config: AgentConfig, worktree_path: str) -> dict[str, An
     """
     Returns a dict representing opencode.json for this config/worktree.
     """
-    cfg: dict[str, Any] = {}
+    cfg: dict[str, Any] = {
+        "$schema": "https://opencode.ai/config.json",
+        "provider": {
+            "google": {
+                "options": {
+                    "apiKey": "{env:GOOGLE_API_KEY}"
+                }
+            }
+        }
+    }
 
     # MCP server entries for semantic tools
     mcp: dict[str, Any] = {}
     if "serena" in config.tools or "semble" in config.tools:
         mcp["serena"] = {
-            "command": "serena",
-            "args": ["start-mcp-server", "--project", worktree_path],
+            "type": "local",
+            "command": ["serena", "start-mcp-server", "--project", worktree_path],
         }
 
     if mcp:

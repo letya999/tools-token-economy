@@ -5,9 +5,11 @@ from src.core.models import AgentConfig
 from src.features.opencode_config import build_opencode_json, build_tool_restriction_prefix, write_opencode_json
 
 
-def test_build_opencode_json_empty_when_no_mcp_tools():
+def test_build_opencode_json_minimal_structure_present():
     config = AgentConfig(id="t1", name="test", archetype="minimal", tools=["read", "write"])
     cfg = build_opencode_json(config, "/tmp/worktree")
+    assert cfg["$schema"] == "https://opencode.ai/config.json"
+    assert cfg["provider"]["google"]["options"]["apiKey"] == "{env:GOOGLE_API_KEY}"
     assert "mcp" not in cfg
 
 def test_build_opencode_json_includes_serena_mcp_entry():
@@ -15,9 +17,8 @@ def test_build_opencode_json_includes_serena_mcp_entry():
     cfg = build_opencode_json(config, "/tmp/worktree")
     assert "mcp" in cfg
     assert "serena" in cfg["mcp"]
-    assert cfg["mcp"]["serena"]["command"] == "serena"
-    assert "--project" in cfg["mcp"]["serena"]["args"]
-    assert "/tmp/worktree" in cfg["mcp"]["serena"]["args"]
+    assert cfg["mcp"]["serena"]["type"] == "local"
+    assert cfg["mcp"]["serena"]["command"] == ["serena", "start-mcp-server", "--project", "/tmp/worktree"]
 
 def test_build_opencode_json_includes_serena_for_semble():
     config = AgentConfig(id="t3", name="test", archetype="full", tools=["semble", "read"])

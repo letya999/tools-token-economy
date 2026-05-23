@@ -12,7 +12,7 @@ from src.features.agent_integration.opencode_runner import OpenCodeRunner
 def dummy_env():
     """Ensure API keys are present for tests."""
     with patch.dict("os.environ", {
-        "GOOGLE_GENAI_API_KEY": "fake-key",
+        "GOOGLE_API_KEY": "fake-key",
         "OPENAI_API_KEY": "fake-key",
         "ANTHROPIC_API_KEY": "fake-key",
         "OPENROUTER_API_KEY": "fake-key"

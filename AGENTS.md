@@ -6,6 +6,7 @@ You are an expert AI agent working on a research framework designed to evaluate 
 - **Clean Architecture**: Strictly maintain separation between layers (Core, Features, Orchestrator).
 - **Vertical Feature Sliced Design (VFSD)**: Organize code by features (e.g., isolation, telemetry, tools) rather than technical roles.
 - **TDD First**: Every feature must have a corresponding test in `tests/` before implementation.
+- **Adherence to Policies**: You MUST follow all standards defined in **[POLICIES.md](docs/POLICIES.md)**, especially regarding security and "Hardcore" linting.
 - **WSL2 Consistency**: All agent execution and tool testing happen in WSL2 Ubuntu. Ensure paths are handled correctly across Win/WSL boundaries.
 - **Token Economy**: The goal is to measure `success_per_token`. Minimize context bloat.
 

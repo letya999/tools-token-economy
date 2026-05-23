@@ -66,9 +66,9 @@ class BenchmarkOrchestrator:
         for config in self.configs:
             m = config.model.lower()
             if ("gemini" in m or "google/" in m) and not any(
-                os.getenv(k) for k in ["GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY", "GEMINI_API_KEY"]
+                os.getenv(k) for k in ["GOOGLE_API_KEY", "GEMINI_API_KEY"]
             ):
-                missing_keys.add("GOOGLE_API_KEY/GEMINI_API_KEY")
+                missing_keys.add("GOOGLE_API_KEY")
             elif ("gpt-" in m or "openai/" in m) and not os.getenv("OPENAI_API_KEY"):
                 missing_keys.add("OPENAI_API_KEY")
             elif ("claude-" in m or "anthropic/" in m) and not os.getenv("ANTHROPIC_API_KEY"):
@@ -77,7 +77,7 @@ class BenchmarkOrchestrator:
                 missing_keys.add("OPENROUTER_API_KEY")
 
         if missing_keys:
-            self.logger.warning("Potentially missing API keys: %s", missing_keys)
+            self.logger.warning("Potentially missing API keys: %s", sorted(list(missing_keys)))
 
     def _get_tools_for_config(self, config: Any, worktree_path: str) -> list[Any]:
         """Factory method to instantiate tools based on config."""

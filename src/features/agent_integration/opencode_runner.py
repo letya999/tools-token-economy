@@ -61,8 +61,10 @@ class OpenCodeRunner:
 
         model = self._model_flag()
         if "google/" in model:
-            if not any(os.getenv(k) for k in ["GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY", "GEMINI_API_KEY"]):
-                raise ValueError(f"Model {model} requires GOOGLE_GENAI_API_KEY or GEMINI_API_KEY.")
+            if not any(os.getenv(k) for k in ["GOOGLE_API_KEY", "GEMINI_API_KEY"]):
+                raise EnvironmentError(
+                    "GOOGLE_API_KEY not set. Set it with: export GOOGLE_API_KEY=your-key"
+                )
         elif "openai/" in model and not os.getenv("OPENAI_API_KEY"):
             raise ValueError(f"Model {model} requires OPENAI_API_KEY.")
         elif "anthropic/" in model and not os.getenv("ANTHROPIC_API_KEY"):

@@ -9,7 +9,11 @@ if ! command -v npm &>/dev/null; then
   sudo apt-get install -y nodejs
 fi
 if ! command -v opencode &>/dev/null; then
-  sudo npm install -g opencode
+  curl -fsSL https://opencode.ai/install | bash
+  # Ensure opencode is available in the current shell
+  if [ -f ~/.bashrc ]; then
+    source ~/.bashrc
+  fi
 fi
 
 # 2. Python env (uv)
@@ -23,7 +27,9 @@ uv sync
 .venv/bin/pip install serena-agent
 
 # 4. Clone target repo
-REPO_DIR="${REPO_DIR:-/tmp/benchmark_repo}"
+# Note: repos should be in WSL native filesystem for best performance
+REPO_DIR="${REPO_DIR:-$HOME/repos/benchmark_repo}"
+mkdir -p "$(dirname "$REPO_DIR")"
 if [ ! -d "$REPO_DIR" ]; then
   git clone https://github.com/letya999/process_metrics_platform_v2 "$REPO_DIR" 
 fi
