@@ -1,0 +1,1 @@
+Increase test coverage for Google OAuth authentication in the admin panel. Add missing test cases to tests/unit/test_api_google_oauth.py and tests/unit/test_google_auth_service.py covering edge cases like invalid tokens, expired sessions, missing scopes, and error responses from Google API.

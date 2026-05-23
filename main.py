@@ -15,11 +15,19 @@ def main():
     parser.add_argument("--results", default="results", help="Directory to save results")
     parser.add_argument("--test-cmd", default="pytest", help="Command to run tests")
     parser.add_argument("--worktree-base", default="worktrees", help="Base directory for temporary worktrees")
-    parser.add_argument("--task", required=True, help="Task description for the agent")
+    task_group = parser.add_mutually_exclusive_group(required=True)
+    task_group.add_argument("--task", help="Task description for the agent")
+    task_group.add_argument("--task-file", help="Path to a file containing the task description (e.g. configs/current_task.txt)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Run with mock agent (skips real API calls, uses simulated responses)")
 
     args = parser.parse_args()
+
+    if args.task_file:
+        with open(args.task_file, encoding="utf-8") as f:
+            task = f.read().strip()
+    else:
+        task = args.task
 
     # Ensure results directory exists
     os.makedirs(args.results, exist_ok=True)
@@ -33,7 +41,7 @@ def main():
         dry_run=args.dry_run
     )
 
-    orchestrator.run_suite(args.task)
+    orchestrator.run_suite(task)
 
 if __name__ == "__main__":
     main()
