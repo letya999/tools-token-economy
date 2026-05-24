@@ -5,7 +5,8 @@ import time
 from typing import Any
 
 import tiktoken
-from agno.agent import Agent, RunOutput
+from agno.agent import Agent
+from agno.run.agent import RunOutput
 from agno.models.openai import OpenAIChat
 from agno.tools import tool as agno_tool
 from dotenv import load_dotenv
@@ -65,6 +66,10 @@ class AgnoRunner:
 
                 wrapper.__name__ = tool_obj.name
                 wrapper.__doc__ = tool_obj.description
+                # Expose real parameter signature so Agno builds correct OpenAI schema.
+                # Without this, **kwargs causes schema {properties: {kwargs: {}}} and
+                # the model calls tools with the wrong argument structure.
+                wrapper.__signature__ = sig.replace(return_annotation=str)
                 return agno_tool(wrapper)
 
             agno_tools_list.append(make_wrapper(t))
@@ -91,8 +96,7 @@ class AgnoRunner:
                 "When done, output exactly: TASK_COMPLETE",
             ],
             markdown=False,
-            show_tool_calls=False,
-            max_turns=self.config.max_steps
+            tool_call_limit=self.config.max_steps,
         )
 
         metrics_data = {
@@ -106,46 +110,45 @@ class AgnoRunner:
             with self._rate_limiter:
                 response: RunOutput = agent.run(task_description)
             
-            success = "TASK_COMPLETE" in (response.content or "")
+            content_str = response.get_content_as_string() if hasattr(response, "get_content_as_string") else (str(response.content) if response.content else "")
+            success = "TASK_COMPLETE" in content_str
             
             # Extract metrics from Agno response
             if response.metrics:
-                metrics_data["input_tokens"] = getattr(response.metrics, "input_tokens", 0)
-                metrics_data["output_tokens"] = getattr(response.metrics, "output_tokens", 0)
+                metrics_data["input_tokens"] = response.metrics.input_tokens or 0
+                metrics_data["output_tokens"] = response.metrics.output_tokens or 0
             
             # If metrics missing, fallback to counting
             if metrics_data["input_tokens"] == 0:
                 metrics_data["input_tokens"] = self._count_tokens(task_description)
             if metrics_data["output_tokens"] == 0:
-                metrics_data["output_tokens"] = self._count_tokens(str(response.content or ""))
+                metrics_data["output_tokens"] = self._count_tokens(content_str)
 
-            # Count tool calls and tool tokens from messages
+            # Count model calls and tool tokens from messages
             for msg in (response.messages or []):
                 role = getattr(msg, "role", None)
                 content = getattr(msg, "content", "")
-                
                 if role == "assistant":
                     metrics_data["model_calls"] += 1
-                    tool_calls = getattr(msg, "tool_calls", None)
-                    if tool_calls:
-                        metrics_data["tool_calls"] += len(tool_calls)
-                        for tc in tool_calls:
-                            # tc is often a dict or has function attribute
-                            func = tc.get("function", {}) if isinstance(tc, dict) else getattr(tc, "function", {})
-                            name = func.get("name", "") if isinstance(func, dict) else getattr(func, "name", "")
-                            
-                            if name in {"read", "read_all", "glob", "tree_sitter", "repo_map", "simple_rag", "lsp_symbols"}:
-                                metrics_data["files_read"] += 1
-                            elif name in {"patch", "write"}:
-                                metrics_data["files_changed"] += 1
-                
                 elif role == "tool":
                     metrics_data["tool_tokens"] += self._count_tokens(str(content))
-                    if "Error executing tool" in str(content):
-                        metrics_data["errors"] += 1
+
+            # Count tool calls from ToolExecution list
+            _read_tools = {"read", "read_all", "glob", "tree_sitter", "repo_map", "simple_rag", "lsp_symbols"}
+            _write_tools = {"patch", "write"}
+            for tool_exec in (response.tools or []):
+                metrics_data["tool_calls"] += 1
+                name = tool_exec.tool_name or ""
+                if name in _read_tools:
+                    metrics_data["files_read"] += 1
+                elif name in _write_tools:
+                    metrics_data["files_changed"] += 1
+                if tool_exec.tool_call_error:
+                    metrics_data["errors"] += 1
 
         except Exception as e:
-            _log.error("Agno agent execution failed: %s", str(e))
+            import traceback as _tb
+            _log.error("Agno agent execution failed: %s\n%s", str(e), _tb.format_exc())
             success = False
 
         duration = time.time() - start_time
