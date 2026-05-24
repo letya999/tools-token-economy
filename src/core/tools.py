@@ -30,14 +30,20 @@ class BaseTool:
     def __init__(self, name: str, description: str):
         self.name = name
         self.description = description
-        # Standard tokenizer (e.g. GPT-4/3.5) as a proxy for universal benchmarking
-        self._tokenizer = tiktoken.get_encoding("cl100k_base")
+        # Try tiktoken; fall back to char-based estimate if encoding unavailable
+        # (tiktoken 0.13+ moved encodings to a plugin architecture)
+        try:
+            self._tokenizer = tiktoken.get_encoding("cl100k_base")
+        except (ValueError, Exception):
+            self._tokenizer = None
 
     def count_tokens(self, text: str) -> int:
         """Counts tokens in the given text."""
         if not text:
             return 0
-        return len(self._tokenizer.encode(text))
+        if self._tokenizer is not None:
+            return len(self._tokenizer.encode(text))
+        return max(1, len(text) // 4)
 
     def format_result(self, output: str) -> ToolResult:
         """Wraps output into ToolResult with token count."""

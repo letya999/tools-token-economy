@@ -1,3 +1,16 @@
+"""
+Tools Token Economy Benchmark Framework.
+
+NOTE: This benchmark is optimized for native Windows execution. 
+While it supports WSL2 as a fallback, running directly on Windows (win32) 
+is significantly more reliable and avoids pipe deadlock/subprocess hang issues.
+
+Prerequisites for Windows:
+1. Python 3.12+
+2. Git for Windows (provides grep)
+3. Ripgrep: winget install BurntSushi.ripgrep.MSVC
+4. Node.js + npm install -g opencode-ai
+"""
 import argparse
 import os
 import sys
@@ -14,7 +27,10 @@ def main():
     parser = argparse.ArgumentParser(description="Tools Token Economy Benchmark Framework")
     parser.add_argument("--configs", default="configs/benchmark_configs.yaml", help="Path to the configs YAML")
     parser.add_argument("--results", default="results", help="Directory to save results")
-    parser.add_argument("--worktree-base", default="worktrees", help="Base directory for temporary worktrees")
+    # Default outside the tools_token_economy tree so opencode detects the
+    # target repo's git project, not this benchmark project.
+    _default_wt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_oc_worktrees")
+    parser.add_argument("--worktree-base", default=_default_wt, help="Base directory for temporary worktrees")
     parser.add_argument("--repo", help="Override repo path from YAML")
     parser.add_argument("--task", help="Override task from YAML")
     parser.add_argument("--test-cmd", help="Override test command from YAML")

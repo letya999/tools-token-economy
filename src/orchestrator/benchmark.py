@@ -1,12 +1,14 @@
 import logging
 import os
+import re
 import shutil
+import sys
 import time
 from typing import Any
 
 from src.core.config_loader import load_benchmark_configs
 from src.core.models import EvalResult
-from src.features.agent_integration.opencode_runner import OpenCodeRunner
+from src.features.agent_integration.agno_runner import AgnoRunner
 from src.features.evaluation import EvalEngine
 from src.features.isolation import GitIsolationProvider
 from src.features.metrics_aggregator import MetricsAggregator
@@ -20,9 +22,21 @@ from src.features.tool_registry.basic_tools import (
 from src.features.tool_registry.grep_tools import GitGrepTool, GrepTool, RgTool, SemgrepTool, UgrepTool
 from src.features.tool_registry.lsp_tools import LspSymbolsTool
 from src.features.tool_registry.semantic_tools import SembleAdapterTool, SerenaAdapterTool, SimpleRagTool
-from src.features.opencode_config import write_opencode_json
+from src.features.prompt_builder import build_tool_restriction_prefix
 from src.features.tool_registry.shell_tool import ShellTool
 from src.features.tool_registry.structural_tools import RepoMapTool, TreeSitterTool
+
+
+def _to_platform_path(path: str) -> str:
+    """Convert a Windows-style path (C:\\...) to /mnt/c/... when running in WSL."""
+    if sys.platform == "win32":
+        return path
+    m = re.match(r'^([A-Za-z])[:/\\](.*)', path.replace("\\", "/"))
+    if m:
+        drive = m.group(1).lower()
+        rest = m.group(2).lstrip("/")
+        return f"/mnt/{drive}/{rest}"
+    return path
 
 
 class BenchmarkOrchestrator:
@@ -40,10 +54,10 @@ class BenchmarkOrchestrator:
         dry_run: bool = False,
         timeout_sec: int = 600,
     ):
-        self.repo_path = os.path.abspath(repo_path)
+        self.repo_path = os.path.abspath(_to_platform_path(repo_path))
         self.configs = load_benchmark_configs(configs_path)
         self.results_dir = os.path.abspath(results_dir)
-        self.worktree_base = os.path.abspath(worktree_base)
+        self.worktree_base = os.path.abspath(_to_platform_path(worktree_base))
         self.test_cmd = test_cmd
         self.dry_run = dry_run
         self.timeout_sec = timeout_sec
@@ -61,7 +75,7 @@ class BenchmarkOrchestrator:
         if self.dry_run:
             return
 
-        for cmd in ["opencode", "git"]:
+        for cmd in ["git"]:
             if not shutil.which(cmd):
                 raise RuntimeError(f"Required CLI tool '{cmd}' not found in PATH.")
 
@@ -122,11 +136,11 @@ class BenchmarkOrchestrator:
                 worktree_path = self.isolation.setup(run_id)
                 tools = self._get_tools_for_config(config, worktree_path)
 
-                if not self.dry_run:
-                    write_opencode_json(config, worktree_path)
-
-                runner = OpenCodeRunner(config, tools, mock=self.dry_run, timeout_sec=self.timeout_sec)
-                run_metrics = runner.run(task_description, worktree_path=worktree_path)
+                runner = AgnoRunner(config, tools, mock=self.dry_run, timeout_sec=self.timeout_sec)
+                
+                prefix = build_tool_restriction_prefix(config)
+                full_task = (prefix + task_description) if prefix else task_description
+                run_metrics = runner.run(full_task, worktree_path=worktree_path)
 
                 eval_res = self.eval_engine.evaluate(worktree_path, self.test_cmd)
 
