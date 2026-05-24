@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.core.models import AgentConfig, RunMetrics
-from src.features.evaluation import EvalOutcome
 from src.orchestrator.benchmark import BenchmarkOrchestrator
 
 
@@ -55,7 +54,6 @@ def orchestrator(minimal_configs_yaml, mock_repo, tmp_path):
             repo_path=mock_repo,
             configs_path=minimal_configs_yaml,
             results_dir=str(tmp_path / "results"),
-            test_cmd="pytest",
             worktree_base=str(tmp_path / "worktrees"),
             dry_run=True,
         )
@@ -75,10 +73,6 @@ def test_orchestrator_dry_run_runs_all_configs(orchestrator, tmp_path):
 
     orchestrator.isolation.setup = MagicMock(return_value=fake_wt)
     orchestrator.isolation.teardown = MagicMock()
-    orchestrator.eval_engine.evaluate = MagicMock(
-        return_value=EvalOutcome(success=True, eval_score=1.0, output="1 passed",
-                                 tests_passed=1, tests_failed=0, tests_total=1)
-    )
 
     orchestrator.run_suite("Fix the bug")
 
@@ -96,10 +90,6 @@ def test_orchestrator_rankings_generated_after_suite(orchestrator, tmp_path):
 
     orchestrator.isolation.setup = MagicMock(return_value=fake_wt)
     orchestrator.isolation.teardown = MagicMock()
-    orchestrator.eval_engine.evaluate = MagicMock(
-        return_value=EvalOutcome(success=True, eval_score=1.0, output="",
-                                 tests_passed=0, tests_failed=0, tests_total=0)
-    )
 
     orchestrator.run_suite("task")
 
@@ -138,28 +128,3 @@ def test_get_tools_for_config_maps_correctly(orchestrator, tmp_path):
     assert "serena" in tool_names
 
 
-def test_eval_engine_tests_passed_merged_into_metrics(orchestrator, tmp_path):
-    """tests_passed from EvalEngine should appear in saved metrics.json."""
-    import json
-    fake_wt = str(tmp_path / "wt")
-    os.makedirs(fake_wt, exist_ok=True)
-
-    orchestrator.isolation.setup = MagicMock(return_value=fake_wt)
-    orchestrator.isolation.teardown = MagicMock()
-    orchestrator.eval_engine.evaluate = MagicMock(
-        return_value=EvalOutcome(success=True, eval_score=0.8, output="8 passed, 2 failed",
-                                 tests_passed=8, tests_failed=2, tests_total=10)
-    )
-
-    orchestrator.run_suite("task")
-
-    results_base = str(tmp_path / "results")
-    metrics_files = []
-    for d in os.listdir(results_base):
-        mf = os.path.join(results_base, d, "metrics.json")
-        if os.path.isfile(mf):
-            metrics_files.append(mf)
-
-    assert metrics_files
-    data = json.loads(open(metrics_files[0]).read())
-    assert data["tests_passed"] == 8

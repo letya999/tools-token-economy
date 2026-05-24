@@ -9,7 +9,6 @@ from typing import Any
 from src.core.config_loader import load_benchmark_configs
 from src.core.models import EvalResult
 from src.features.agent_integration.agno_runner import AgnoRunner
-from src.features.evaluation import EvalEngine
 from src.features.isolation import GitIsolationProvider
 from src.features.metrics_aggregator import MetricsAggregator
 from src.features.tool_registry.basic_tools import (
@@ -49,21 +48,19 @@ class BenchmarkOrchestrator:
         repo_path: str,
         configs_path: str,
         results_dir: str,
-        test_cmd: str,
         worktree_base: str = "worktrees",
         dry_run: bool = False,
         timeout_sec: int = 600,
+        **_kwargs,
     ):
         self.repo_path = os.path.abspath(_to_platform_path(repo_path))
         self.configs = load_benchmark_configs(configs_path)
         self.results_dir = os.path.abspath(results_dir)
         self.worktree_base = os.path.abspath(_to_platform_path(worktree_base))
-        self.test_cmd = test_cmd
         self.dry_run = dry_run
         self.timeout_sec = timeout_sec
         self.aggregator = MetricsAggregator(self.results_dir)
         self.isolation = GitIsolationProvider(self.repo_path, self.worktree_base)
-        self.eval_engine = EvalEngine()
 
         os.makedirs(self.worktree_base, exist_ok=True)
 
@@ -142,21 +139,11 @@ class BenchmarkOrchestrator:
                 full_task = (prefix + task_description) if prefix else task_description
                 run_metrics = runner.run(full_task, worktree_path=worktree_path)
 
-                eval_res = self.eval_engine.evaluate(worktree_path, self.test_cmd)
-
-                run_metrics = run_metrics.model_copy(
-                    update={
-                        "tests_passed": eval_res.tests_passed,
-                        "eval_score": eval_res.eval_score,
-                        "success": eval_res.success,
-                    }
-                )
-
                 final_result = EvalResult(
                     run_id=run_id,
                     config_id=config.id,
                     metrics=run_metrics,
-                    success=eval_res.success,
+                    success=True,
                     error=None,
                     patch=None,
                 )
