@@ -1,3 +1,4 @@
+import os
 import re
 from dataclasses import dataclass
 
@@ -45,7 +46,12 @@ class EvalEngine:
         """
         Runs the test command and returns outcome with test counts.
         """
-        result = self.shell.run(test_cmd, cwd=worktree_path)
+        # Isolate the eval subprocess: uv run pytest inherits UV_PROJECT_ENVIRONMENT
+        # and re-syncs the target repo's deps into it, destroying the benchmark venv.
+        # Redirect it to a per-worktree path that is cleaned up with the worktree.
+        eval_env = {k: v for k, v in os.environ.items() if k != 'UV_PROJECT_ENVIRONMENT'}
+        eval_env['UV_PROJECT_ENVIRONMENT'] = os.path.join(worktree_path, '.eval_venv')
+        result = self.shell.run(test_cmd, cwd=worktree_path, env=eval_env)
         combined = result.stdout + result.stderr
         success = result.exit_code == 0
 

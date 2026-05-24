@@ -12,7 +12,7 @@ class ShellExecutor:
     """
     Executes shell commands and returns the results.
     """
-    def run(self, command: str, cwd: str | None = None, timeout: float | None = None) -> ShellResult:
+    def run(self, command: str, cwd: str | None = None, timeout: float | None = None, env: dict | None = None) -> ShellResult:
         try:
             process = subprocess.run(
                 command,
@@ -21,7 +21,8 @@ class ShellExecutor:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                check=False
+                check=False,
+                env=env,
             )
             return ShellResult(
                 stdout=process.stdout,
