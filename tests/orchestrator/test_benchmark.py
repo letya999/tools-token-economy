@@ -118,7 +118,7 @@ def test_orchestrator_teardown_called_on_error(orchestrator, tmp_path):
     orchestrator.isolation.setup = MagicMock(return_value=fake_wt)
     orchestrator.isolation.teardown = MagicMock()
     # Simulate crash during agent run
-    with patch("src.orchestrator.benchmark.OpenCodeRunner") as mock_runner_cls:
+    with patch("src.orchestrator.benchmark.AgnoRunner") as mock_runner_cls:
         mock_runner_cls.return_value.run = MagicMock(side_effect=RuntimeError("crash"))
         orchestrator.run_suite("task")
 
