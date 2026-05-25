@@ -44,6 +44,11 @@ class RunMetrics(BaseModel):
     files_changed: int = 0
     patch_lines: int = 0
     errors: int = 0
+    task_solved_score: float = 0.0
+    tool_correctness_score: float = 0.0
+    judge_reasoning_task: str = ""
+    judge_reasoning_tools: str = ""
+    judge_model: str = ""
 
     @computed_field
     @property

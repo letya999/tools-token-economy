@@ -11,6 +11,7 @@ from src.core.config_loader import load_benchmark_configs
 from src.core.models import EvalResult, McpServerConfig
 from src.features.agent_integration.agno_runner import AgnoRunner
 from src.features.isolation import GitIsolationProvider
+from src.features.llm_judge import LLMJudge
 from src.features.metrics_aggregator import MetricsAggregator
 from src.features.preflight import PreflightChecker
 from src.features.tool_registry.basic_tools import (
@@ -207,6 +208,39 @@ class BenchmarkOrchestrator:
                 full_task = (prefix + task_description) if prefix else task_description
                 run_metrics = runner.run(full_task, worktree_path=worktree_path, test_cmd=self.test_cmd, log_path=log_path)
 
+                # LLM Judge Evaluation
+                try:
+                    messages_data = []
+                    if os.path.exists(log_path):
+                        with open(log_path, encoding="utf-8") as f:
+                            messages_data = json.load(f)
+                    
+                    patch_path = os.path.join(run_dir, "final.patch")
+                    patch_content = None
+                    if os.path.exists(patch_path):
+                        with open(patch_path, encoding="utf-8") as f:
+                            patch_content = f.read()
+
+                    judge = LLMJudge()
+                    report = judge.evaluate(
+                        task_description=full_task,
+                        agent_messages=messages_data,
+                        patch=patch_content,
+                        config_tools=config.tools,
+                        tests_passed=run_metrics.tests_passed,
+                        tests_total=run_metrics.tests_passed + run_metrics.errors,
+                        success=run_metrics.success
+                    )
+                    run_metrics = run_metrics.model_copy(update={
+                        "task_solved_score": report.task_solved_score,
+                        "tool_correctness_score": report.tool_correctness_score,
+                        "judge_reasoning_task": report.task_solved_reasoning,
+                        "judge_reasoning_tools": report.tool_correctness_reasoning,
+                        "judge_model": report.judge_model
+                    })
+                except Exception as e:
+                    self.logger.warning(f"LLM Judge failed for config {config.id}: {e}")
+
                 final_result = EvalResult(
                     run_id=run_id,
                     config_id=config.id,
@@ -308,6 +342,39 @@ class BenchmarkOrchestrator:
                 prefix = build_tool_restriction_prefix(config)
                 full_task = (prefix + task_description) if prefix else task_description
                 run_metrics = runner.run(full_task, worktree_path=worktree_path, test_cmd=self.test_cmd, log_path=log_path)
+
+                # LLM Judge Evaluation
+                try:
+                    messages_data = []
+                    if os.path.exists(log_path):
+                        with open(log_path, encoding="utf-8") as f:
+                            messages_data = json.load(f)
+                    
+                    patch_path = os.path.join(run_dir, "final.patch")
+                    patch_content = None
+                    if os.path.exists(patch_path):
+                        with open(patch_path, encoding="utf-8") as f:
+                            patch_content = f.read()
+
+                    judge = LLMJudge()
+                    report = judge.evaluate(
+                        task_description=full_task,
+                        agent_messages=messages_data,
+                        patch=patch_content,
+                        config_tools=config.tools,
+                        tests_passed=run_metrics.tests_passed,
+                        tests_total=run_metrics.tests_passed + run_metrics.errors,
+                        success=run_metrics.success
+                    )
+                    run_metrics = run_metrics.model_copy(update={
+                        "task_solved_score": report.task_solved_score,
+                        "tool_correctness_score": report.tool_correctness_score,
+                        "judge_reasoning_task": report.task_solved_reasoning,
+                        "judge_reasoning_tools": report.tool_correctness_reasoning,
+                        "judge_model": report.judge_model
+                    })
+                except Exception as e:
+                    self.logger.warning(f"LLM Judge failed for config {config.id}: {e}")
 
                 final_result = EvalResult(
                     run_id=run_id,

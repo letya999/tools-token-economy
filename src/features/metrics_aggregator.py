@@ -62,6 +62,8 @@ class MetricsAggregator:
                     "duration_sec": round(data.get("duration_sec", 0.0), 2),
                     "model_calls": data.get("model_calls", 0),
                     "tool_calls": data.get("tool_calls", 0),
+                    "task_solved": data.get("task_solved_score", 0.0),
+                    "tool_correct": data.get("tool_correctness_score", 0.0),
                     "cost_usd": round(data.get("cost_usd", 0.0), 6),
                 })
             except Exception:
@@ -70,22 +72,21 @@ class MetricsAggregator:
         if not rows:
             return "No results found to rank."
 
-        # Sort by success_per_token desc, then total_tokens asc
-        rows.sort(key=lambda r: (-r["success_per_token"], r["total_tokens"]))
+        # Sort by task_solved_score desc, success_per_token desc, total_tokens asc
+        rows.sort(key=lambda r: (-r["task_solved"], -r["success_per_token"], r["total_tokens"]))
 
         lines = [
             "# Benchmark Rankings",
             "",
-            "| # | Run | Success | Total Tokens | Success/Token | Duration(s) | Model Calls | Tool Calls | Cost USD |",
-            "|---|-----|---------|-------------|---------------|-------------|-------------|------------|----------|",
+            "| # | Run | Success | Task Solved | Tool Correct | Total Tokens | Success/Token | Duration(s) | Model Calls | Tool Calls | Cost USD |",
+            "|---|-----|---------|-------------|--------------|--------------|---------------|-------------|-------------|------------|----------|",
         ]
         for i, r in enumerate(rows, 1):
             ok = "✓" if r["success"] else "✗"
             lines.append(
-                f"| {i} | {r['run']} | {ok} | {r['total_tokens']} | {r['success_per_token']:.6f} "
+                f"| {i} | {r['run']} | {ok} | {r['task_solved']:.2f} | {r['tool_correct']:.2f} | {r['total_tokens']} | {r['success_per_token']:.6f} "
                 f"| {r['duration_sec']} | {r['model_calls']} | {r['tool_calls']} | {r['cost_usd']:.6f} |"
             )
-
         output = "\n".join(lines)
 
         # Also save to file
