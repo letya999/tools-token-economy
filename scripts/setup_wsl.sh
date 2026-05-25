@@ -20,11 +20,14 @@ fi
 if ! command -v uv &>/dev/null; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
+# UV_LINK_MODE=copy required: venv lives on Windows NTFS (/mnt/c), hardlinks
+# across Linux/NTFS boundaries fail and the fallback corrupts large packages (jedi, etc.)
+export UV_LINK_MODE=copy
 uv venv --python 3.13
 uv sync
 
-# 3. Serena MCP server
-.venv/bin/pip install serena-agent agno openai
+# 3. Serena MCP server (installs global binary + creates ~/.serena/serena_config.yml)
+bash scripts/install/install_serena.sh
 
 # 4. Clone target repo
 # Note: repos should be in WSL native filesystem for best performance
@@ -45,10 +48,8 @@ if ! command -v ugrep &>/dev/null; then
   }
 fi
 
-# semgrep - semantic grep for code patterns (must be system-wide, not in venv)
-if ! command -v semgrep &>/dev/null; then
-  sudo pip3 install semgrep --break-system-packages --quiet
-fi
+# ast-grep (sg) - free structural code search, replaces semgrep (paywalled >= 1.100)
+# Installed via uv/pip from pyproject.toml - available in .venv/bin/sg after uv sync
 
 # 6. Env check
 if [ -z "$GOOGLE_API_KEY" ]; then
