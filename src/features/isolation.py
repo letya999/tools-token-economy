@@ -40,12 +40,16 @@ class GitIsolationProvider:
         if not wt_path:
             return
 
-        subprocess.run(
-            [self.git_cmd, "worktree", "remove", "--force", wt_path],
-            cwd=self.repo_path,
-            check=True,
-            capture_output=True
-        )
+        try:
+            subprocess.run(
+                [self.git_cmd, "worktree", "remove", "--force", wt_path],
+                cwd=self.repo_path,
+                check=True,
+                capture_output=True
+            )
+        except subprocess.CalledProcessError:
+            # Worktree may already be gone; fall through to filesystem cleanup
+            pass
 
         if os.path.exists(wt_path):
             shutil.rmtree(wt_path, ignore_errors=True)

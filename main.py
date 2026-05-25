@@ -17,6 +17,12 @@ import sys
 
 from dotenv import load_dotenv
 
+# Non-login WSL/Linux shells omit ~/.local/bin where uv, serena, ast-grep live.
+if sys.platform != "win32":
+    _user_bin = os.path.expanduser("~/.local/bin")
+    if os.path.isdir(_user_bin) and _user_bin not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = _user_bin + ":" + os.environ["PATH"]
+
 from src.core.config_loader import load_benchmark_meta
 from src.orchestrator.benchmark import BenchmarkOrchestrator
 
@@ -36,6 +42,19 @@ def main():
     parser.add_argument("--test-cmd", help="Override test command from YAML")
     parser.add_argument("--dry-run", action="store_true",
                         help="Run with mock agent (skips real API calls, uses simulated responses)")
+    parser.add_argument(
+        "--retry-failed",
+        nargs="?",
+        const="latest",
+        metavar="TIMESTAMP",
+        help="Re-run failed configs from a previous run. Optionally specify timestamp (YYYYMMDD_HHMMSS). Defaults to latest run.",
+    )
+    parser.add_argument(
+        "--config-ids",
+        nargs="+",
+        metavar="ID",
+        help="Run only the specified config IDs (e.g. 02_claude_code_like 05_read_only).",
+    )
 
     args = parser.parse_args()
 
@@ -61,7 +80,11 @@ def main():
         timeout_sec=timeout_sec,
     )
 
-    orchestrator.run_suite(task)
+    if args.retry_failed is not None:
+        ts = None if args.retry_failed == "latest" else args.retry_failed
+        orchestrator.run_failed_configs(task, run_timestamp=ts, config_ids=args.config_ids)
+    else:
+        orchestrator.run_suite(task, config_ids=args.config_ids)
 
 if __name__ == "__main__":
     main()

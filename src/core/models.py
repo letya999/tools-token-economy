@@ -1,5 +1,17 @@
 
+from dataclasses import dataclass
+
 from pydantic import BaseModel, computed_field
+
+
+@dataclass
+class McpServerConfig:
+    tool_name: str
+    command: str
+    args_template: list[str]
+
+    def resolve_args(self, worktree_path: str) -> list[str]:
+        return [a.replace("{path}", worktree_path) for a in self.args_template]
 
 
 class BenchmarkMeta(BaseModel):
@@ -47,6 +59,12 @@ class RunMetrics(BaseModel):
             "gemini-2.5-flash": {"input": 0.1, "output": 0.4},
             "gpt-4o": {"input": 2.5, "output": 10.0},
             "claude-3-5-sonnet": {"input": 3.0, "output": 15.0},
+            "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+            "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
+            "gpt-4.1-nano": {"input": 0.10, "output": 0.40},
+            "openai/gpt-4.1-nano": {"input": 0.10, "output": 0.40},
+            "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
+            "openai/gpt-4.1-mini": {"input": 0.40, "output": 1.60},
             "deepseek-coder": {"input": 0.14, "output": 0.28},
             "openrouter/deepseek/deepseek-coder": {"input": 0.32, "output": 0.89},
         }

@@ -12,7 +12,7 @@ class LspSymbolsTool(BaseTool):
 
     def __init__(self, worktree_path: str):
         super().__init__("lsp_symbols", "Retrieve symbols/definitions using static analysis")
-        self.worktree_path = worktree_path
+        self.worktree_path = os.path.realpath(worktree_path)
 
     def execute(self, symbol: str = "", file_path: str = "") -> ToolResult:
         """Entry point for symbol analysis."""
@@ -46,8 +46,14 @@ class LspSymbolsTool(BaseTool):
             results = []
             for d in definitions:
                 fpath = str(d.module_path) if d.module_path else "unknown"
-                if fpath.startswith(self.worktree_path):
-                    rel = os.path.relpath(fpath, self.worktree_path)
+                real_fpath = os.path.realpath(fpath)
+                
+                # Filter: must be inside worktree AND not in venv/site-packages
+                is_inside = real_fpath.startswith(self.worktree_path)
+                is_external = ".venv" in real_fpath or "site-packages" in real_fpath
+                
+                if is_inside and not is_external:
+                    rel = os.path.relpath(real_fpath, self.worktree_path)
                     results.append(f"{rel}: {d.type}: {d.name} (line {d.line})")
             return self.format_result("\n".join(results) if results else f"Symbol '{symbol}' not found.")
         except Exception as e:

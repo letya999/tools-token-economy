@@ -1,150 +1,155 @@
 benchmark:
   repo: "C:\\Users\\User\\a_projects\\process_metrics_platform_v2"
-  test_cmd: "uv run pytest tests/unit/ -x -q --timeout=60"
+  test_cmd: "uv run --extra dev pytest tests/unit/ -x -q"
   timeout_sec: 1200
   task: >
-    Increase test coverage for Google OAuth authentication in the admin panel.
-    Add missing test cases to tests/unit/test_api_google_oauth.py and
-    tests/unit/test_google_auth_service.py covering edge cases like invalid tokens,
-    expired sessions, missing scopes, and error responses from Google API.
+    Add exactly ONE new async test function to tests/unit/test_api_google_oauth.py.
+    Name it test_google_redirect_includes_required_scopes. It must verify that
+    the Google OAuth redirect URL contains all three required OAuth scopes: openid,
+    email, and profile. Use the existing pattern from the file: decorate with
+    @pytest.mark.asyncio, create a request with _make_request(), call
+    await admin_api.admin_google_redirect(request, return_to=None), then use
+    urlparse and parse_qs (both imported at line 2) to extract the scope query
+    parameter from response.headers['location'] and assert 'openid', 'email',
+    and 'profile' are all present in it. Do not modify any other file.
 
 configs:
   - id: "01_cursor_like"
     name: "Cursor-like"
     archetype: "cursor"
-    tools: ["repo_map", "simple_rag", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["repo_map", "simple_rag", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 50
 
   - id: "02_claude_code_like"
     name: "Claude Code-like"
     archetype: "claude"
-    tools: ["glob", "rg", "read", "shell", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["glob", "rg", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 50
 
   - id: "03_gemini_like"
     name: "Gemini-like"
     archetype: "gemini"
-    tools: ["repo_map", "read_all", "rg", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["repo_map", "read_all", "rg", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 50
 
   - id: "04_codex_like"
     name: "Codex-like"
     archetype: "codex"
-    tools: ["grep", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["grep", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 50
 
   - id: "05_read_only"
     name: "Mechanism: Read Only"
     archetype: "ablation"
-    tools: ["read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
   - id: "06_read_all"
     name: "Mechanism: Read All"
     archetype: "ablation"
-    tools: ["read_all", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["read_all", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
   - id: "07_grep"
     name: "Mechanism: Grep"
     archetype: "ablation"
-    tools: ["grep", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["grep", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
   - id: "08_git_grep"
     name: "Mechanism: Git Grep"
     archetype: "ablation"
-    tools: ["git_grep", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["git_grep", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
   - id: "09_rg"
     name: "Mechanism: Ripgrep"
     archetype: "ablation"
-    tools: ["rg", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["rg", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
   - id: "10_ugrep"
     name: "Mechanism: Ugrep"
     archetype: "ablation"
-    tools: ["ugrep", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["ugrep", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
-  - id: "11_semgrep"
-    name: "Mechanism: Semgrep"
+  - id: "11_ast_grep"
+    name: "Mechanism: ast-grep"
     archetype: "ablation"
-    tools: ["semgrep", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["ast_grep", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
   - id: "12_tree_sitter"
     name: "Mechanism: Tree-sitter"
     archetype: "ablation"
-    tools: ["tree_sitter", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["tree_sitter", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
   - id: "13_lsp"
     name: "Mechanism: LSP Symbols"
     archetype: "ablation"
-    tools: ["lsp_symbols", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["lsp_symbols", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
   - id: "14_repo_map"
     name: "Mechanism: Repo Map"
     archetype: "ablation"
-    tools: ["repo_map", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["repo_map", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
   - id: "15_simple_rag"
     name: "Mechanism: Simple RAG"
     archetype: "ablation"
-    tools: ["simple_rag", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["simple_rag", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 30
 
   - id: "16_serena_only"
     name: "Semantic: Serena Only"
     archetype: "semantic"
-    tools: ["serena", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["serena", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 40
 
   - id: "17_semble_only"
     name: "Semantic: Semble Only"
     archetype: "semantic"
-    tools: ["semble", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["semble", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 40
 
   - id: "18_rg_repo_map"
     name: "Hybrid: RG + Repo Map"
     archetype: "hybrid"
-    tools: ["repo_map", "rg", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["repo_map", "rg", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 50
 
   - id: "19_rg_lsp"
     name: "Hybrid: RG + LSP"
     archetype: "hybrid"
-    tools: ["rg", "lsp_symbols", "read", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["rg", "lsp_symbols", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 50
 
   - id: "20_serena_semble"
     name: "Hybrid: Serena + Semble"
     archetype: "hybrid"
-    tools: ["serena", "semble", "patch", "test"]
-    model: "openai/gpt-4o-mini"
+    tools: ["serena", "semble", "read", "write", "patch"]
+    model: "openai/gpt-4.1-mini"
     max_steps: 50

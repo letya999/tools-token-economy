@@ -1,140 +1,195 @@
 import os
 
 from src.core.tools import BaseTool, ToolResult
-from src.features.mcp_client import McpToolClient
 
-# Optional import for BM25 fallback
-try:
-    from rank_bm25 import BM25Okapi
-    HAS_BM25 = True
-except ImportError:
-    HAS_BM25 = False
+# Lazy module-level singletons — avoid paying import cost unless the tool is used.
+_QDRANT_CLIENT_CLS = None
+_QDRANT_MODELS = None
+_DENSE_MODEL = None
+_SPARSE_MODEL = None
+
+
+def _qdrant_client():
+    global _QDRANT_CLIENT_CLS
+    if _QDRANT_CLIENT_CLS is None:
+        from qdrant_client import QdrantClient
+        _QDRANT_CLIENT_CLS = QdrantClient
+    return _QDRANT_CLIENT_CLS
+
+
+def _qdrant_models():
+    global _QDRANT_MODELS
+    if _QDRANT_MODELS is None:
+        from qdrant_client import models
+        _QDRANT_MODELS = models
+    return _QDRANT_MODELS
+
+
+def _dense_model():
+    global _DENSE_MODEL
+    if _DENSE_MODEL is None:
+        from fastembed import TextEmbedding
+        _DENSE_MODEL = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    return _DENSE_MODEL
+
+
+def _sparse_model():
+    """BM25 tokenizer from Qdrant — no ML download, computes TF-IDF on the fly."""
+    global _SPARSE_MODEL
+    if _SPARSE_MODEL is None:
+        from fastembed import SparseTextEmbedding
+        _SPARSE_MODEL = SparseTextEmbedding(model_name="Qdrant/bm25")
+    return _SPARSE_MODEL
+
 
 class SimpleRagTool(BaseTool):
     """
-    Simple RAG implementation using BM25 for file content retrieval.
-    """
-    def __init__(self, worktree_path: str):
-        super().__init__("simple_rag", "Semantic-ish retrieval using BM25 over file contents")
-        self.worktree_path = worktree_path
+    Hybrid RAG: Qdrant in-memory with named dense (384-dim cosine) + sparse (BM25) vectors.
+    At query time, both retrievers run independently and results are fused via RRF.
 
-    def _get_all_python_files(self) -> list[str]:
-        files_to_index = []
+    Call ingest() from the orchestrator BEFORE starting AgnoRunner so that index-building
+    time is excluded from the agent's measured duration_sec.
+    """
+
+    _COLLECTION = "rag"
+    _DENSE_DIM = 384
+
+    def __init__(self, worktree_path: str):
+        super().__init__(
+            "simple_rag",
+            "Hybrid semantic + BM25 code search using Qdrant + fastembed (RRF fusion)",
+        )
+        self.worktree_path = worktree_path
+        self._client = None
+        self._file_count = 0
+        self._chunk_count = 0
+
+    @property
+    def _ingested(self) -> bool:
+        return self._client is not None
+
+    def ingest(self) -> dict:
+        """Build dense + sparse index over worktree Python files.
+
+        Idempotent — safe to call multiple times; subsequent calls return cached stats.
+        Intended to be called from BenchmarkOrchestrator before AgnoRunner.run() so
+        ingestion time is not charged to the agent's duration_sec metric.
+        """
+        if self._ingested:
+            return {"status": "cached", "files": self._file_count, "chunks": self._chunk_count}
+        self._init_rag()
+        return {"status": "done", "files": self._file_count, "chunks": self._chunk_count}
+
+    def _init_rag(self) -> None:
+        if self._ingested:
+            return
+
+        qm = _qdrant_models()
+        QdrantClient = _qdrant_client()
+
+        self._client = QdrantClient(":memory:")
+        self._client.create_collection(
+            collection_name=self._COLLECTION,
+            vectors_config={
+                "dense": qm.VectorParams(size=self._DENSE_DIM, distance=qm.Distance.COSINE),
+            },
+            sparse_vectors_config={
+                "sparse": qm.SparseVectorParams(index=qm.SparseIndexParams()),
+            },
+        )
+        self._build_index()
+
+    def _build_index(self) -> None:
+        qm = _qdrant_models()
+        dense = _dense_model()
+        sparse = _sparse_model()
+
+        points = []
+        point_id = 1
+        _SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build"}
+
         for root, dirs, files in os.walk(self.worktree_path):
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('venv', '__pycache__')]
-            for file in files:
-                if file.endswith(".py"):
-                    files_to_index.append(os.path.join(root, file))
-        return files_to_index
+            dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+            for fname in files:
+                if not fname.endswith(".py"):
+                    continue
+                full = os.path.join(root, fname)
+                rel = os.path.relpath(full, self.worktree_path)
+                try:
+                    with open(full, encoding="utf-8") as fh:
+                        lines = fh.readlines()
+                except Exception:
+                    continue
 
-    def execute(self, query: str, top_k: int = 3) -> ToolResult:
-        if not HAS_BM25:
-            return self.format_result("Error: rank_bm25 not installed. RAG fallback unavailable.")
+                self._file_count += 1
+                chunk_size, overlap = 50, 10
 
-        files = self._get_all_python_files()
-        if not files:
-            return self.format_result("No python files to index.")
+                for i in range(0, len(lines), chunk_size - overlap):
+                    chunk = lines[i: i + chunk_size]
+                    if not chunk:
+                        break
+                    text = "".join(chunk)
 
-        corpus = []
-        file_map = []
+                    dense_vec = list(dense.embed([text]))[0].tolist()
+                    sparse_emb = list(sparse.embed([text]))[0]
+                    sparse_vec = qm.SparseVector(
+                        indices=sparse_emb.indices.tolist(),
+                        values=sparse_emb.values.tolist(),
+                    )
 
-        for f_path in files:
-            try:
-                with open(f_path, encoding="utf-8") as f:
-                    content = f.read()
-                    corpus.append(content.lower().split())
-                    file_map.append(f_path)
-            except Exception:
-                continue
+                    points.append(
+                        qm.PointStruct(
+                            id=point_id,
+                            vector={"dense": dense_vec, "sparse": sparse_vec},
+                            payload={
+                                "file": rel,
+                                "start_line": i + 1,
+                                "end_line": i + len(chunk),
+                                "text": text,
+                            },
+                        )
+                    )
+                    point_id += 1
+                    self._chunk_count += 1
 
-        if not corpus:
-            return self.format_result("Failed to index files.")
+        if points:
+            self._client.upsert(collection_name=self._COLLECTION, points=points)
 
-        bm25 = BM25Okapi(corpus)
-        tokenized_query = query.lower().split()
-
-        top_n = bm25.get_top_n(tokenized_query, file_map, n=top_k)
-
-        results = []
-        for full_path in top_n:
-            rel_path = os.path.relpath(full_path, self.worktree_path)
-            try:
-                with open(full_path, encoding="utf-8") as f:
-                    snippet = f.read(500).strip()
-                results.append(f"FILE: {rel_path}\nSNIPPET: {snippet}...")
-            except Exception:
-                continue
-
-        output = "\n\n".join(results) if results else "No relevant files found."
-        return self.format_result(output)
-
-class SerenaAdapterTool(BaseTool):
-    """
-    Semantic search tool using Serena MCP.
-    Uses persistent MCP client.
-    """
-    def __init__(self, worktree_path: str):
-        super().__init__("serena", "Semantic retrieval for codebase using Serena MCP")
-        self.worktree_path = worktree_path
-        self.rag_engine = SimpleRagTool(worktree_path)
-        self._client: McpToolClient | None = None
-
-    def _get_client(self) -> McpToolClient:
-        if self._client is None:
-            self._client = McpToolClient(
-                server_command="serena",
-                server_args=["start-mcp-server", "--project", self.worktree_path],
-            )
-        return self._client
-
-    def execute(self, query: str) -> ToolResult:
+    def execute(self, query: str, top_k: int = 5) -> ToolResult:
         try:
-            client = self._get_client()
-            result = client.call_tool("find_symbol", {"query": query})
-            return self.format_result(result)
-        except Exception:
-            return self.rag_engine.execute(query=query)
+            self._init_rag()
+            qm = _qdrant_models()
+            dense_vec = list(_dense_model().embed([query]))[0].tolist()
 
-    def close(self):
-        if self._client:
-            self._client.close()
-            self._client = None
-
-    def __del__(self):
-        self.close()
-
-class SembleAdapterTool(BaseTool):
-    """
-    Structural navigation tool using Semble MCP.
-    """
-    def __init__(self, worktree_path: str):
-        super().__init__("semble", "Structural navigation using Semble MCP")
-        self.worktree_path = worktree_path
-        self.rag_engine = SimpleRagTool(worktree_path)
-        self._client: McpToolClient | None = None
-
-    def _get_client(self) -> McpToolClient:
-        if self._client is None:
-            self._client = McpToolClient(
-                server_command="semble",
-                server_args=["mcp", "--path", self.worktree_path],
+            sparse_emb = list(_sparse_model().embed([query]))[0]
+            sparse_vec = qm.SparseVector(
+                indices=sparse_emb.indices.tolist(),
+                values=sparse_emb.values.tolist(),
             )
-        return self._client
 
-    def execute(self, action: str = "map", query: str = "") -> ToolResult:
-        try:
-            client = self._get_client()
-            tool_name = "get_symbols_overview" if action == "map" else "find_symbol"
-            args = {"query": query} if query else {"path": self.worktree_path}
-            result = client.call_tool(tool_name, args)
-            return self.format_result(result)
-        except Exception:
-            return self.rag_engine.execute(query=query or action)
+            # Hybrid query: dense + BM25 fused with Reciprocal Rank Fusion.
+            # Prefetch casts a wider net (4× top_k) before RRF re-ranks.
+            results = self._client.query_points(
+                collection_name=self._COLLECTION,
+                prefetch=[
+                    qm.Prefetch(query=dense_vec, using="dense", limit=top_k * 4),
+                    qm.Prefetch(query=sparse_vec, using="sparse", limit=top_k * 4),
+                ],
+                query=qm.FusionQuery(fusion=qm.Fusion.RRF),
+                limit=top_k,
+                with_payload=True,
+            )
 
-    def close(self):
-        if self._client:
-            self._client.close()
-            self._client = None
+            hits = []
+            for pt in results.points:
+                p = pt.payload
+                hits.append(
+                    f"FILE: {p['file']}\n"
+                    f"LINES: {p['start_line']}-{p['end_line']}\n"
+                    f"SNIPPET:\n{p['text'].strip()}"
+                )
 
-    def __del__(self):
-        self.close()
+            output = "\n\n---\n\n".join(hits) if hits else "No relevant context found."
+            return self.format_result(output)
+        except Exception as e:
+            return self.format_result(f"Error in SimpleRag: {e}")

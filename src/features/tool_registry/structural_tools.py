@@ -7,9 +7,8 @@ from src.core.tools import BaseTool, ToolResult
 
 
 class TreeSitterTool(BaseTool):
-    """
-    Инструмент для извлечения структуры файла через AST (Tree-Sitter).
-    """
+    """Extracts function and class symbols from a Python file via Tree-Sitter AST."""
+
     def __init__(self, worktree_path: str):
         super().__init__("tree_sitter", "Extracts AST structure from a file (Python only for now)")
         self.worktree_path = worktree_path
@@ -26,7 +25,7 @@ class TreeSitterTool(BaseTool):
                 content = f.read()
 
             tree = self.parser.parse(content)
-            # Извлекаем только важные узлы (функции, классы) для экономии токенов
+            # Extract only top-level symbols (functions, classes) to keep token count low
             symbols = []
 
             query_str = """
@@ -49,20 +48,18 @@ class TreeSitterTool(BaseTool):
             return self.format_result(f"Error parsing file: {e}")
 
 class RepoMapTool(BaseTool):
-    """
-    Создает карту репозитория: список файлов и их ключевых символов.
-    """
+    """Generates a map of the repository: files with their key symbols."""
+
     def __init__(self, worktree_path: str):
         super().__init__("repo_map", "Generates a map of the repository with files and symbols")
         self.worktree_path = worktree_path
         self.ts_tool = TreeSitterTool(worktree_path)
 
-    def execute(self, depth: int = 2) -> ToolResult:
+    def execute(self) -> ToolResult:
         repo_map = []
 
         for root, dirs, files in os.walk(self.worktree_path):
-            # Пропускаем скрытые папки и venv
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('venv', '__pycache__')]
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('venv', '__pycache__', 'node_modules')]
 
             rel_root = os.path.relpath(root, self.worktree_path)
             if rel_root == ".":
@@ -72,12 +69,9 @@ class RepoMapTool(BaseTool):
                 if file.endswith(".py"):
                     rel_path = os.path.join(rel_root, file)
                     symbols_res = self.ts_tool.execute(rel_path)
-
-                    file_header = f"FILE: {rel_path}"
                     symbols_content = "  " + symbols_res.output.replace("\n", "\n  ")
-                    repo_map.append(f"{file_header}\n{symbols_content}")
+                    repo_map.append(f"FILE: {rel_path}\n{symbols_content}")
                 elif not file.startswith("."):
-                    # Просто фиксируем наличие не-python файлов
                     repo_map.append(f"FILE: {os.path.join(rel_root, file)}")
 
         output = "\n\n".join(repo_map)

@@ -19,5 +19,6 @@ def test_load_benchmark_configs():
 
     # Check a few random ones
     read_only = next(c for c in configs if c.id == "05_read_only")
-    assert read_only.tools == ["read", "patch", "test"]
     assert read_only.archetype == "ablation"
+    assert "read" in read_only.tools
+    assert "write" in read_only.tools

@@ -11,9 +11,9 @@ dependencies = [
     "pytest>=9.0.3",
     "pytest-mock>=3.15.1",
     "pyyaml>=6.0.3",
-    "rank-bm25>=0.2.2",
+    "serena-agent>=1.5.0",
     "ruff>=0.15.14",
-    "tiktoken>=0.13.0",
+    "tiktoken>=0.12.0",
     "tree-sitter>=0.25.2",
     "tree-sitter-python>=0.25.0",
     "mcp>=1.0.0",
@@ -23,6 +23,9 @@ dependencies = [
     "pytest-anyio>=0.0.0",
     "agno>=1.0.0",
     "openai>=1.0.0",
+    "ast-grep-cli>=0.42.3",
+    "qdrant-client>=1.9.0",
+    "fastembed>=0.3.6",
 ]
 
 [tool.pytest.ini_options]
