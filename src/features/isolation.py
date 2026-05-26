@@ -46,15 +46,18 @@ class GitIsolationProvider:
         return wt_path
 
     def _append_gitignore(self, wt_path: str, entries: list[str]) -> None:
-        gitignore = os.path.join(wt_path, ".gitignore")
+        # Use .git/info/exclude — local per-worktree ignore that is never tracked,
+        # so it won't appear in `git diff HEAD` or the agent's patch.
+        exclude = os.path.join(wt_path, ".git", "info", "exclude")
         try:
-            existing = open(gitignore).read() if os.path.exists(gitignore) else ""
-            with open(gitignore, "a") as f:
+            os.makedirs(os.path.dirname(exclude), exist_ok=True)
+            existing = open(exclude).read() if os.path.exists(exclude) else ""
+            with open(exclude, "a") as f:
                 for entry in entries:
                     if entry not in existing.splitlines():
                         f.write(f"{entry}\n")
         except Exception as e:
-            _log.debug("Could not update .gitignore in worktree: %s", e)
+            _log.debug("Could not update .git/info/exclude in worktree: %s", e)
 
     def teardown(self, run_id: str):
         """
