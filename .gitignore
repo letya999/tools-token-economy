@@ -48,3 +48,10 @@ coverage.xml
 
 # Environment secrets
 .env
+
+# Tool/Agent specific
+.claude/
+
+# Temporary artifacts from testing
+C/
+C:*/
