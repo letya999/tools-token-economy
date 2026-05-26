@@ -10,7 +10,10 @@ target_repo:
 
 task:
   description: |
-    Complete the full schedule/sensor lifecycle control surface in the Admin UI:
+    Complete the full schedule/sensor lifecycle control surface in the Admin UI.
+    
+    IMPORTANT: You MUST call `write` or `patch` to persist changes. Simply reading
+    and stating what needs to change is a failure. Use RELATIVE file paths.
 
     1. Add FastAPI endpoints in app/api/admin.py:
        - GET  /api/v1/schedules         — list all Dagster schedules with status (running/stopped)
@@ -22,14 +25,9 @@ task:
        - GET  /api/v1/runs               — run history (last 50 runs, with status/timestamps)
        - POST /api/v1/runs/{run_id}/rerun     — one-click rerun for a failed/completed run
 
-    2. Add a new Streamlit page in streamlit_admin/ for schedule/sensor management:
-       - Table showing all schedules with current status
-       - Start/Stop buttons per schedule
-       - Table showing all sensors with current status
-       - Run history table with last success/failure timestamps
-       - One-click rerun button for failed runs
+    2. Add a new Streamlit page in streamlit_admin/ for schedule/sensor management.
 
-    The goal: operations can manage ETL/metrics lifecycle without Dagster CLI access.
+    Finalize by outputting exactly: TASK_COMPLETE
 
   # Command to verify the task was completed correctly
   test_cmd: "python -m pytest tests/ -v --tb=short -q -m 'unit or not integration'"

@@ -51,7 +51,7 @@ This document outlines the development plan for the framework testing token-effi
 ### Task 7: Execution Evaluation (Evaluation Engine) [DONE]
 **Description:** Logic for running tests in the target repository and determining task success.
 **AC:**
-- `EvalEngine` implemented, accepting `test_cmd`.
+- `ExecutionValidator` implemented (replacing `EvalEngine`), with `UV_PROJECT_ENVIRONMENT` isolation.
 - Tests verify parsing of successful, failed, and partial test runs.
 
 ### Task 8: Patch Application Mechanism [DONE]

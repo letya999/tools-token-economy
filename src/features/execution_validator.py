@@ -48,13 +48,14 @@ class ExecutionResult:
 
 class ExecutionValidator:
     """
-    Universal execution validator. Works regardless of task type or whether     
+    Universal execution validator. Works regardless of task type or whether
     the target project has tests.
     """
 
-    def __init__(self, worktree_path: str, run_dir: str | None = None):
+    def __init__(self, worktree_path: str, run_dir: str | None = None, timeout_sec: int = 600):
         self.worktree_path = worktree_path
         self.run_dir = run_dir
+        self.timeout_sec = timeout_sec
 
     def validate(
         self,
@@ -134,27 +135,30 @@ class ExecutionValidator:
         return passed, failed
 
     def _run_cmd(self, cmd: str, method: str, eval_env: dict | None = None) -> ExecutionResult:
+        # Isolate uv's venv inside the worktree so it never touches the benchmark venv.
         env = os.environ.copy()
+        env.pop("UV_PROJECT_ENVIRONMENT", None)
+        env["UV_PROJECT_ENVIRONMENT"] = os.path.join(self.worktree_path, ".eval_venv")
         if eval_env:
             env.update(eval_env)
-        
+
         try:
             proc = subprocess.run(
                 cmd, shell=True, cwd=self.worktree_path,
-                capture_output=True, text=True, timeout=60, env=env
+                capture_output=True, text=True, timeout=self.timeout_sec, env=env
             )
             stdout, stderr = proc.stdout, proc.stderr
             exit_code = proc.returncode
 
             if exit_code == 0:
                 return ExecutionResult(outcome="passed", method_used=method, stdout=stdout, stderr=stderr)
-            
+
             if self._is_env_error(stdout, stderr, exit_code):
                 return ExecutionResult(outcome="env_error", method_used=method, stdout=stdout, stderr=stderr, exit_code=exit_code)
-            
+
             return ExecutionResult(outcome="failed", method_used=method, stdout=stdout, stderr=stderr, exit_code=exit_code)
         except subprocess.TimeoutExpired:
-            return ExecutionResult(outcome="failed", method_used=method, stderr="Validation timed out (60s)")
+            return ExecutionResult(outcome="failed", method_used=method, stderr=f"Validation timed out ({self.timeout_sec}s)")
         except Exception as e:
             return ExecutionResult(outcome="env_error", method_used=method, stderr=str(e))
 

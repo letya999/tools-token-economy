@@ -12,24 +12,12 @@ from src.core.models import EvalResult, McpServerConfig
 from src.features.tool_registry.registry import ToolRegistry
 from src.features.execution_validator import ExecutionValidator
 from src.features.agent_integration.agno_runner import AgnoRunner
+from src.features.cost_guard import CostGuard, BudgetExceededError
 from src.features.isolation import GitIsolationProvider
 from src.features.llm_judge import LLMJudge
 from src.features.metrics_aggregator import MetricsAggregator
 from src.features.preflight import PreflightChecker
-from src.features.tool_registry.basic_tools import (
-    FileReadTool,
-    FileWriteTool,
-    GlobTool,
-    PatchApplierTool,
-    ReadAllTool,
-    InsertAfterTool,
-)
-from src.features.tool_registry.grep_tools import AstGrepTool, GitGrepTool, GrepTool, RgTool, SemgrepTool, UgrepTool
-from src.features.tool_registry.lsp_tools import LspSymbolsTool
-from src.features.tool_registry.semantic_tools import SimpleRagTool
 from src.features.prompt_builder import build_tool_restriction_prefix
-from src.features.tool_registry.shell_tool import ShellTool
-from src.features.tool_registry.structural_tools import RepoMapTool, TreeSitterTool
 
 
 _MCP_TOOL_REGISTRY: dict[str, McpServerConfig] = {
@@ -41,7 +29,7 @@ _MCP_TOOL_REGISTRY: dict[str, McpServerConfig] = {
     "semble": McpServerConfig(
         tool_name="semble",
         command="uvx",
-        args_template=["--from", "semble[mcp]", "semble"],
+        args_template=["--from", "semble[mcp]", "semble", "mcp", "--path", "{path}"],
     ),
 }
 
@@ -56,9 +44,6 @@ def _to_platform_path(path: str) -> str:
         rest = m.group(2).lstrip("/")
         return f"/mnt/{drive}/{rest}"
     return path
-
-
-from src.features.cost_guard import CostGuard, BudgetExceededError
 
 
 class BenchmarkOrchestrator:
@@ -124,21 +109,21 @@ class BenchmarkOrchestrator:
         return [_MCP_TOOL_REGISTRY[t] for t in config.tools if t in _MCP_TOOL_REGISTRY]
 
     def _preingest_rag_tools(self, tools: list, config_id: str) -> None:
-        """Pre-build RAG index via ToolValidator.prepare()."""
-        # We need a registry instance, use repo_path for ingestion
-        registry = ToolRegistry(self.repo_path)
-        
+        """Pre-build RAG index on the actual tool instances the runner will use.
+
+        Calling ingest() here (before AgnoRunner.run) ensures index-build time is
+        excluded from the agent's measured duration_sec.
+        """
         for tool in tools:
-            validator = registry.get_validator(tool.name)
-            if validator:
-                self.logger.info("[%s] Preparing tool: %s", config_id, tool.name)
-                t0 = time.time()
-                res = validator.prepare(self.repo_path)
-                elapsed = time.time() - t0
-                if res.passed:
-                    self.logger.info("[%s] Preparation complete for %s (%.1fs): %s", config_id, tool.name, elapsed, res.detail)
-                elif not res.skipped:
-                    self.logger.warning("[%s] Preparation failed for %s: %s", config_id, tool.name, res.detail)
+            if not hasattr(tool, "ingest"):
+                continue
+            self.logger.info("[%s] Pre-ingesting %s on %s", config_id, tool.name, getattr(tool, "worktree_path", "?"))
+            t0 = time.time()
+            try:
+                stats = tool.ingest()
+                self.logger.info("[%s] %s done in %.1fs: %s", config_id, tool.name, time.time() - t0, stats)
+            except Exception as e:
+                self.logger.warning("[%s] Pre-ingestion failed for %s: %s", config_id, tool.name, e)
 
     def _inject_serena_project_config(self, worktree_path: str) -> None:
         """Write a minimal .serena/project.yml via SerenaValidator.configure()."""
@@ -163,6 +148,107 @@ class BenchmarkOrchestrator:
             self.logger.warning("Failed to capture baseline: %s", e)
             return 0
 
+    def _run_single_config(
+        self,
+        config: Any,
+        run_id: str,
+        task_description: str,
+        baseline_pass_count: int,
+    ) -> None:
+        """Run one config end-to-end: setup worktree, run agent, judge, save result."""
+        worktree_path = None
+        tools: list = []
+        try:
+            run_dir = os.path.join(self.results_dir, run_id)
+            os.makedirs(run_dir, exist_ok=True)
+            log_path = os.path.join(run_dir, "agent_messages.json")
+
+            worktree_path = self.isolation.setup(run_id)
+            if "serena" in config.tools:
+                self._inject_serena_project_config(worktree_path)
+            tools = self._get_tools_for_config(config, worktree_path)
+            if not self.dry_run:
+                self._preingest_rag_tools(tools, config.id)
+            mcp_configs = self._get_mcp_configs_for_config(config)
+
+            runner = AgnoRunner(
+                config, tools,
+                mcp_configs=mcp_configs,
+                mock=self.dry_run,
+                timeout_sec=self.timeout_sec,
+                run_dir=run_dir,
+                validation_cmd=self.validation_cmd,
+                baseline_pass_count=baseline_pass_count,
+            )
+
+            prefix = build_tool_restriction_prefix(config)
+            full_task = (prefix + task_description) if prefix else task_description
+            run_metrics = runner.run(full_task, worktree_path=worktree_path, test_cmd=self.test_cmd, log_path=log_path)
+
+            # Wire cost/token exceeded flags into metrics
+            flags = self.cost_guard.record(config.id, run_metrics.cost_usd, run_metrics.total_tokens)
+            run_metrics = run_metrics.model_copy(update={
+                "cost_exceeded": flags["cost_exceeded"],
+                "token_exceeded": flags["token_exceeded"],
+            })
+
+            # LLM Judge Evaluation
+            try:
+                messages_data = []
+                if os.path.exists(log_path):
+                    with open(log_path, encoding="utf-8") as f:
+                        messages_data = json.load(f)
+
+                patch_path = os.path.join(run_dir, "final.patch")
+                patch_content = None
+                if os.path.exists(patch_path):
+                    with open(patch_path, encoding="utf-8") as f:
+                        patch_content = f.read()
+
+                judge = LLMJudge()
+                report = judge.evaluate(
+                    task_description=full_task,
+                    agent_messages=messages_data,
+                    patch=patch_content,
+                    config_tools=config.tools,
+                    tests_passed=run_metrics.tests_passed,
+                    tests_total=run_metrics.tests_passed + run_metrics.errors,
+                    success=run_metrics.success,
+                    execution_result=run_metrics.execution_result,
+                )
+                run_metrics = run_metrics.model_copy(update={
+                    "task_solved_score": report.task_solved_score,
+                    "tool_correctness_score": report.tool_correctness_score,
+                    "judge_reasoning_task": report.task_solved_reasoning,
+                    "judge_reasoning_tools": report.tool_correctness_reasoning,
+                    "judge_model": report.judge_model,
+                })
+            except Exception as e:
+                self.logger.warning("LLM Judge failed for config %s: %s", config.id, e)
+
+            final_result = EvalResult(
+                run_id=run_id,
+                config_id=config.id,
+                metrics=run_metrics,
+                success=run_metrics.success,
+                error=None,
+                patch=None,
+            )
+            save_path = self.aggregator.save_run(final_result)
+            self.logger.info("Config %s done. Success=%s  Results: %s", config.id, run_metrics.success, save_path)
+
+        except Exception:
+            self.logger.exception("Error running config %s", config.id)
+        finally:
+            for tool in tools:
+                if hasattr(tool, "close"):
+                    try:
+                        tool.close()
+                    except Exception:
+                        pass
+            if worktree_path:
+                self.isolation.teardown(run_id)
+
     def run_suite(self, task_description: str, config_ids: list[str] | None = None):
         """Runs configurations sequentially. Pass config_ids to run a subset."""
         self._run_preflight(selected_ids=config_ids)
@@ -183,104 +269,14 @@ class BenchmarkOrchestrator:
                 break
 
             self.logger.info("Running config: %s (%s)", config.id, config.name)
-            run_id = f"run_{timestamp}_{config.id}"
-            worktree_path = None
-            tools = []
-            try:
-                run_dir = os.path.join(self.results_dir, run_id)
-                os.makedirs(run_dir, exist_ok=True)
-                log_path = os.path.join(run_dir, "agent_messages.json")
-
-                worktree_path = self.isolation.setup(run_id)
-                if "serena" in config.tools:
-                    self._inject_serena_project_config(worktree_path)
-                tools = self._get_tools_for_config(config, worktree_path)
-                if not self.dry_run:
-                    self._preingest_rag_tools(tools, config.id)
-                mcp_configs = self._get_mcp_configs_for_config(config)
-
-                runner = AgnoRunner(
-                    config, tools,
-                    mcp_configs=mcp_configs,
-                    mock=self.dry_run,
-                    timeout_sec=self.timeout_sec,
-                    run_dir=run_dir,
-                    validation_cmd=self.validation_cmd,
-                    baseline_pass_count=baseline_pass_count,
-                )
-
-                prefix = build_tool_restriction_prefix(config)
-                full_task = (prefix + task_description) if prefix else task_description
-                run_metrics = runner.run(full_task, worktree_path=worktree_path, test_cmd=self.test_cmd, log_path=log_path)
-                
-                # Record usage
-                self.cost_guard.record(config.id, run_metrics.cost_usd, run_metrics.total_tokens)
-
-                # LLM Judge Evaluation
-                try:
-                    messages_data = []
-                    if os.path.exists(log_path):
-                        with open(log_path, encoding="utf-8") as f:
-                            messages_data = json.load(f)
-                    
-                    patch_path = os.path.join(run_dir, "final.patch")
-                    patch_content = None
-                    if os.path.exists(patch_path):
-                        with open(patch_path, encoding="utf-8") as f:
-                            patch_content = f.read()
-
-                    judge = LLMJudge()
-                    report = judge.evaluate(
-                        task_description=full_task,
-                        agent_messages=messages_data,
-                        patch=patch_content,
-                        config_tools=config.tools,
-                        tests_passed=run_metrics.tests_passed,
-                        tests_total=run_metrics.tests_passed + run_metrics.errors,
-                        success=run_metrics.success
-                    )
-                    run_metrics = run_metrics.model_copy(update={
-                        "task_solved_score": report.task_solved_score,
-                        "tool_correctness_score": report.tool_correctness_score,
-                        "judge_reasoning_task": report.task_solved_reasoning,
-                        "judge_reasoning_tools": report.tool_correctness_reasoning,
-                        "judge_model": report.judge_model
-                    })
-                except Exception as e:
-                    self.logger.warning(f"LLM Judge failed for config {config.id}: {e}")
-
-                final_result = EvalResult(
-                    run_id=run_id,
-                    config_id=config.id,
-                    metrics=run_metrics,
-                    success=run_metrics.success,
-                    error=None,
-                    patch=None,
-                )
-
-                save_path = self.aggregator.save_run(final_result)
-                self.logger.info("Config %s finished. Results: %s", config.id, save_path)
-
-            except Exception:
-                self.logger.exception("Error running config %s", config.id)
-            finally:
-                for tool in tools:
-                    if hasattr(tool, "close"):
-                        try:
-                            tool.close()
-                        except Exception:  # noqa: S110
-                            pass
-                if worktree_path:
-                    self.isolation.teardown(run_id)
+            self._run_single_config(config, f"run_{timestamp}_{config.id}", task_description, baseline_pass_count)
 
         self.logger.info("Benchmark suite completed.")
         rankings = self.aggregator.generate_rankings()
         self.logger.info("Rankings generated:\n%s", rankings)
 
     def run_failed_configs(self, task_description: str, run_timestamp: str | None = None, config_ids: list[str] | None = None):
-        """
-        Re-runs only configs that previously failed in a given benchmark run.
-        """
+        """Re-runs only configs that previously failed in a given benchmark run."""
         self._run_preflight()
 
         if run_timestamp is None:
@@ -331,93 +327,8 @@ class BenchmarkOrchestrator:
                 self.logger.error(str(e))
                 break
 
-            run_id = f"run_{run_timestamp}_{config.id}"
-            worktree_path = None
-            tools = []
             self.logger.info("Retrying config: %s (%s)", config.id, config.name)
-            try:
-                run_dir = os.path.join(self.results_dir, run_id)
-                os.makedirs(run_dir, exist_ok=True)
-                log_path = os.path.join(run_dir, "agent_messages.json")
-
-                worktree_path = self.isolation.setup(run_id)
-                if "serena" in config.tools:
-                    self._inject_serena_project_config(worktree_path)
-                tools = self._get_tools_for_config(config, worktree_path)
-                if not self.dry_run:
-                    self._preingest_rag_tools(tools, config.id)
-                mcp_configs = self._get_mcp_configs_for_config(config)
-                runner = AgnoRunner(
-                    config, tools,
-                    mcp_configs=mcp_configs,
-                    mock=self.dry_run,
-                    timeout_sec=self.timeout_sec,
-                    run_dir=run_dir,
-                    validation_cmd=self.validation_cmd,
-                    baseline_pass_count=baseline_pass_count,
-                )
-                prefix = build_tool_restriction_prefix(config)
-                full_task = (prefix + task_description) if prefix else task_description
-                run_metrics = runner.run(full_task, worktree_path=worktree_path, test_cmd=self.test_cmd, log_path=log_path)
-                
-                # Record usage
-                self.cost_guard.record(config.id, run_metrics.cost_usd, run_metrics.total_tokens)
-
-                # LLM Judge Evaluation
-                try:
-                    messages_data = []
-                    if os.path.exists(log_path):
-                        with open(log_path, encoding="utf-8") as f:
-                            messages_data = json.load(f)
-                    
-                    patch_path = os.path.join(run_dir, "final.patch")
-                    patch_content = None
-                    if os.path.exists(patch_path):
-                        with open(patch_path, encoding="utf-8") as f:
-                            patch_content = f.read()
-
-                    judge = LLMJudge()
-                    report = judge.evaluate(
-                        task_description=full_task,
-                        agent_messages=messages_data,
-                        patch=patch_content,
-                        config_tools=config.tools,
-                        tests_passed=run_metrics.tests_passed,
-                        tests_total=run_metrics.tests_passed + run_metrics.errors,
-                        success=run_metrics.success
-                    )
-                    run_metrics = run_metrics.model_copy(update={
-                        "task_solved_score": report.task_solved_score,
-                        "tool_correctness_score": report.tool_correctness_score,
-                        "judge_reasoning_task": report.task_solved_reasoning,
-                        "judge_reasoning_tools": report.tool_correctness_reasoning,
-                        "judge_model": report.judge_model
-                    })
-                except Exception as e:
-                    self.logger.warning(f"LLM Judge failed for config {config.id}: {e}")
-
-                final_result = EvalResult(
-                    run_id=run_id,
-                    config_id=config.id,
-                    metrics=run_metrics,
-                    success=run_metrics.success,
-                    error=None,
-                    patch=None,
-                )
-                save_path = self.aggregator.save_run(final_result)
-                self.logger.info("Config %s retry done. Success=%s  Results: %s",
-                                 config.id, run_metrics.success, save_path)
-            except Exception:
-                self.logger.exception("Error retrying config %s", config.id)
-            finally:
-                for tool in tools:
-                    if hasattr(tool, "close"):
-                        try:
-                            tool.close()
-                        except Exception:
-                            pass
-                if worktree_path:
-                    self.isolation.teardown(run_id)
+            self._run_single_config(config, f"run_{run_timestamp}_{config.id}", task_description, baseline_pass_count)
 
         self.logger.info("Retry run complete.")
         rankings = self.aggregator.generate_rankings()

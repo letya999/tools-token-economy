@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 
@@ -42,6 +43,3 @@ def test_git_isolation_provider_setup_teardown(temp_repo, tmp_path):
         check=False
     )
     assert str(wt_path) not in result.stdout
-
-
-import os

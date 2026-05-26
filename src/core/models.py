@@ -96,7 +96,8 @@ class RunMetrics(BaseModel):
     def success_per_token(self) -> float:
         if self.total_tokens == 0:
             return 0.0
-        return 1.0 / self.total_tokens if self.success else 0.0
+        # Scale to "successes per 1M tokens" for better readability (F-016)
+        return 1_000_000.0 / self.total_tokens if self.success else 0.0
 
 class EvalResult(BaseModel):
     run_id: str

@@ -1,3 +1,4 @@
+import os
 from typing import Protocol
 
 import tiktoken
@@ -51,3 +52,14 @@ class BaseTool:
             output=output,
             tokens=self.count_tokens(output)
         )
+
+    def _safe_path(self, worktree_path: str, file_path: str) -> str | None:
+        """
+        Returns resolved absolute path if it's within worktree, else None.
+        Prevents path traversal attacks.
+        """
+        worktree_abs = os.path.realpath(worktree_path)
+        full = os.path.realpath(os.path.join(worktree_abs, file_path))
+        if not full.startswith(worktree_abs + os.sep) and full != worktree_abs:
+            return None
+        return full

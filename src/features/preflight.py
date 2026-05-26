@@ -146,9 +146,9 @@ class PreflightChecker:
 
     def _check_benchmark_python(self) -> list[PreflightResult]:
         version = sys.version_info
-        ok = version >= (3, 12)
+        ok = version >= (3, 13)
         return [PreflightResult(
-            name="Python >= 3.12",
+            name="Python >= 3.13",
             passed=ok,
             level="critical",
             detail=f"Found {version.major}.{version.minor}.{version.micro}" + ("" if ok else " — upgrade required"),

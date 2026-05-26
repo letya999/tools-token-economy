@@ -3,9 +3,9 @@ import concurrent.futures
 import contextlib
 import inspect
 import json
+import keyword
 import logging
 import os
-import shlex
 import subprocess
 import time
 from typing import Any
@@ -22,9 +22,7 @@ from mcp.client.stdio import stdio_client
 
 from src.core.models import AgentConfig, McpServerConfig, RunMetrics
 from src.core.tools import Tool
-from src.features.evaluation import EvalEngine
 from src.features.rate_limiter import RateLimiter
-
 from src.features.execution_validator import ExecutionValidator
 
 _log = logging.getLogger(__name__)
@@ -87,6 +85,8 @@ class AgnoRunner:
                 parts: list[str] = []
                 args: list[str] = []
                 for name, param in sig.parameters.items():
+                    if not name.isidentifier() or keyword.iskeyword(name):
+                        raise ValueError(f"Tool {tool_obj.name!r} has invalid parameter name: {name!r}")
                     ann = param.annotation if param.annotation is not inspect.Parameter.empty else str
                     globs[f"_t_{name}"] = ann
                     args.append(f"{name}={name}")
@@ -111,13 +111,13 @@ class AgnoRunner:
             agno_tools_list.append(make_wrapper(t))
         return agno_tools_list
 
-    def _validate_run(self, worktree_path: str, test_cmd: str) -> tuple[bool, int, int, int]:
+    def _validate_run(self, worktree_path: str, test_cmd: str) -> tuple[bool, int, int, int, str, bool]:
         """
         Validates the run using ExecutionValidator.
-        Returns (success, tests_passed, tests_failed, patch_lines).
+        Returns (success, tests_passed, tests_failed, patch_lines, execution_result, made_changes).
         """
-        validator = ExecutionValidator(worktree_path, run_dir=self.run_dir)
-        
+        validator = ExecutionValidator(worktree_path, run_dir=self.run_dir, timeout_sec=self.timeout_sec)
+
         # 1. Capture patch details
         patch_lines = 0
         try:
@@ -143,15 +143,14 @@ class AgnoRunner:
             baseline_pass_count=self.baseline_pass_count
         )
 
-        # 3. Decision
-        # Success = made changes AND didn't fail execution
+        # 3. Decision: success = made changes AND didn't fail execution
         made_changes = patch_lines > 0
         success = made_changes and res.outcome != "failed"
 
         if not success and made_changes:
             _log.warning("Validation failed (%s). Stderr:\n%s", res.method_used, res.stderr[-1000:])
 
-        return success, res.tests_passed, res.tests_failed, patch_lines
+        return success, res.tests_passed, res.tests_failed, patch_lines, res.outcome, made_changes
 
     def _extract_metrics_from_response(
         self,
@@ -252,6 +251,8 @@ class AgnoRunner:
                     params = StdioServerParameters(
                         command=cfg.command,
                         args=cfg.resolve_args(worktree_path),
+                        cwd=worktree_path,
+                        env=os.environ.copy(),
                     )
                     
                     # WORKAROUND for WSL/Agno async bugs: 
@@ -292,10 +293,12 @@ class AgnoRunner:
             metrics_data = self._extract_metrics_from_response(response, task_description, log_path)
 
             if worktree_path and os.path.isdir(worktree_path):
-                success, tests_passed, tests_failed, patch_lines = self._validate_run(worktree_path, test_cmd)
+                success, tests_passed, tests_failed, patch_lines, exec_result, made_changes = self._validate_run(worktree_path, test_cmd)
                 metrics_data["tests_passed"] = tests_passed
                 metrics_data["patch_lines"] = patch_lines
                 metrics_data["errors"] = tests_failed
+                metrics_data["execution_result"] = exec_result
+                metrics_data["made_changes"] = made_changes
             else:
                 content_str = (
                     response.get_content_as_string()
@@ -321,7 +324,7 @@ class AgnoRunner:
                 "input_tokens": 0, "output_tokens": 0, "tool_tokens": 0,
                 "model_calls": 0, "tool_calls": 0, "files_read": 0,
                 "files_changed": 0, "patch_lines": 0, "errors": 0,
-                "tests_passed": 0,
+                "tests_passed": 0, "execution_result": "not_verified", "made_changes": False,
             }),
         )
 
@@ -347,7 +350,6 @@ class AgnoRunner:
             except RuntimeError:
                 loop = None
             if loop and loop.is_running():
-                import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                     future = pool.submit(
                         asyncio.run,
@@ -390,10 +392,12 @@ class AgnoRunner:
             metrics_data = self._extract_metrics_from_response(response, task_description, log_path)
 
             if worktree_path and os.path.isdir(worktree_path):
-                success, tests_passed, tests_failed, patch_lines = self._validate_run(worktree_path, test_cmd)
+                success, tests_passed, tests_failed, patch_lines, exec_result, made_changes = self._validate_run(worktree_path, test_cmd)
                 metrics_data["tests_passed"] = tests_passed
                 metrics_data["patch_lines"] = patch_lines
                 metrics_data["errors"] = tests_failed
+                metrics_data["execution_result"] = exec_result
+                metrics_data["made_changes"] = made_changes
             else:
                 content_str = (
                     response.get_content_as_string()
@@ -419,7 +423,7 @@ class AgnoRunner:
                 "input_tokens": 0, "output_tokens": 0, "tool_tokens": 0,
                 "model_calls": 0, "tool_calls": 0, "files_read": 0,
                 "files_changed": 0, "patch_lines": 0, "errors": 0,
-                "tests_passed": 0,
+                "tests_passed": 0, "execution_result": "not_verified", "made_changes": False,
             }),
         )
 

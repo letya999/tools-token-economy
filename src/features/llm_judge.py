@@ -19,20 +19,21 @@ class JudgeReport(BaseModel):
 class LLMJudge:
     _TASK_SYSTEM = (
         "You are an objective evaluator for a software engineering benchmark.\n"
-        "You will be shown: a task description, the git diff of changes made by an AI agent, and test results.\n"
+        "You will be shown: a task description, the git diff of changes made by an AI agent, and execution results.\n"
         'Return ONLY a JSON object with two fields: "score" (float 0.0 to 1.0) and "reasoning" (1-2 sentences).\n'
         "Score 1.0 = task fully solved. Score 0.0 = task not attempted or completely wrong.\n"
-        "Be strict: partial solutions that miss key requirements score 0.3-0.6."
+        "Be strict: partial solutions that miss key requirements score 0.3-0.6.\n"
+        "If the agent only explained what to do but made no code changes, score MUST be 0.0."
     )
 
     _TOOLS_SYSTEM = (
         "You are an objective evaluator for a software engineering benchmark.\n"
-        "You will be shown: the list of tools the agent was supposed to use, and the actual sequence of tool calls the agent made.\n"
+        "You will be shown: the list of tools the agent was supposed to use, and the actual sequence of retrieval/navigation tool calls the agent made.\n"
         'Return ONLY a JSON object with two fields: "score" (float 0.0 to 1.0) and "reasoning" (1-2 sentences).\n'
         "Score 1.0 = all prescribed tools were used meaningfully and in a sensible workflow.\n"
         "Score 0.5 = some tools used but others ignored or misused.\n"
         "Score 0.0 = prescribed tools entirely ignored.\n"
-        'Ignore "write" and "patch" tools - they are always expected and not diagnostic.'
+        "Note: Common tools like 'write', 'patch', and 'shell' have been filtered out of the list to focus on retrieval strategy."
     )
 
     def __init__(self, judge_model: str | None = None):
@@ -49,6 +50,7 @@ class LLMJudge:
         tests_passed: int,
         tests_total: int,
         success: bool,
+        execution_result: str = "not_verified",
     ) -> JudgeReport:
         if not self.api_key:
             logger.warning("OPENAI_API_KEY not set. Skipping LLM judge evaluation.")
@@ -59,7 +61,7 @@ class LLMJudge:
             )
 
         task_score, task_reasoning = self._judge_task_solved(
-            task_description, patch, tests_passed, tests_total, success
+            task_description, patch, tests_passed, tests_total, success, execution_result
         )
         tool_score, tool_reasoning = self._judge_tool_correctness(config_tools, agent_messages)
 
@@ -78,12 +80,18 @@ class LLMJudge:
         tests_passed: int,
         tests_total: int,
         success: bool,
+        execution_result: str = "not_verified",
     ) -> tuple[float, str]:
         user_message = (
             f"TASK:\n{task_description}\n\n"
-            f"TEST RESULTS: {tests_passed}/{tests_total} passed. Overall success: {success}\n\n"
+            f"EXECUTION STATUS: {execution_result}\n"
+            f"EXECUTION RESULTS: {tests_passed} passed, {tests_total - tests_passed} failed/error. Overall Success: {success}\n\n"
             f"GIT DIFF (changes made by agent):\n{patch or '(no changes made)'}"
         )
+        # Truncate very large patches to avoid context overflow
+        if len(user_message) > 60000:
+            user_message = user_message[:55000] + "\n... [TRUNCATED]"
+            
         try:
             response = self.client.chat.completions.create(
                 model=self.judge_model,
@@ -105,6 +113,7 @@ class LLMJudge:
         config_tools: list[str],
         agent_messages: list[dict],
     ) -> tuple[float, str]:
+        _ignore_tools = {"write", "patch", "insert_after", "shell"}
         tool_call_sequence = []
         for msg in agent_messages:
             if msg.get("role") != "assistant" or not msg.get("tool_calls"):
@@ -117,13 +126,21 @@ class LLMJudge:
                 else:
                     name = call.function.name
                     args = call.function.arguments
-                tool_call_sequence.append({"tool": name, "args_summary": str(args)[:200]})
+                
+                if name in _ignore_tools:
+                    continue
+                    
+                # Truncate args to keep JSON manageable
+                tool_call_sequence.append({"tool": name, "args": str(args)[:150]})
 
         user_message = (
             f"PRESCRIBED TOOLS FOR THIS CONFIG: {config_tools}\n\n"
             f"ACTUAL TOOL CALLS MADE (in order):\n"
-            f"{json.dumps(tool_call_sequence, indent=2)[:3000]}"
+            f"{json.dumps(tool_call_sequence, indent=2)}"
         )
+        if len(user_message) > 60000:
+             user_message = user_message[:55000] + "\n... [TRUNCATED]"
+
         try:
             response = self.client.chat.completions.create(
                 model=self.judge_model,

@@ -55,12 +55,23 @@ def main():
         metavar="ID",
         help="Run only the specified config IDs (e.g. 02_claude_code_like 05_read_only).",
     )
+    parser.add_argument("--doctor", action="store_true", help="Run infrastructure health checks")
+    parser.add_argument("--auto-fix", action="store_true", help="Attempt to auto-fix issues found by --doctor")
 
     args = parser.parse_args()
 
     meta = load_benchmark_meta(args.configs)
 
     repo = args.repo or (meta.repo if meta else None)
+
+    if args.doctor:
+        if not repo:
+            parser.error("--repo must be set to run doctor")
+        from src.features.doctor import Doctor
+        doc = Doctor(repo)
+        healthy = doc.check_all(auto_fix=args.auto_fix)
+        sys.exit(0 if healthy else 1)
+
     task = args.task or (meta.task if meta else None)
     test_cmd = args.test_cmd or (meta.test_cmd if meta else "pytest")
     timeout_sec = meta.timeout_sec if meta else 600

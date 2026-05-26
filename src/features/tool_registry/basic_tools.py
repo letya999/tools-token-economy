@@ -15,17 +15,10 @@ _BINARY_EXTENSIONS = frozenset({
 class FileReadTool(BaseTool):
     def __init__(self, worktree_path: str):
         super().__init__("read", "Reads content of a specific file")
-        self.worktree_path = os.path.realpath(worktree_path)
-
-    def _safe_path(self, file_path: str) -> str | None:
-        """Returns resolved absolute path if it's within worktree, else None."""
-        full = os.path.realpath(os.path.join(self.worktree_path, file_path))
-        if not full.startswith(self.worktree_path + os.sep) and full != self.worktree_path:
-            return None
-        return full
+        self.worktree_path = worktree_path
 
     def execute(self, file_path: str, start_line: int = 1, end_line: int = -1) -> ToolResult:
-        full_path = self._safe_path(file_path)
+        full_path = self._safe_path(self.worktree_path, file_path)
         if full_path is None:
             raise PermissionError(f"Access denied: {file_path}")
         if not os.path.isfile(full_path):
@@ -75,17 +68,10 @@ class ReadAllTool(BaseTool):
 class FileWriteTool(BaseTool):
     def __init__(self, worktree_path: str):
         super().__init__("write", "Writes complete content to a file")
-        self.worktree_path = os.path.realpath(worktree_path)
-
-    def _safe_path(self, file_path: str) -> str | None:
-        """Returns resolved absolute path if it's within worktree, else None."""
-        full = os.path.realpath(os.path.join(self.worktree_path, file_path))
-        if not full.startswith(self.worktree_path + os.sep) and full != self.worktree_path:
-            return None
-        return full
+        self.worktree_path = worktree_path
 
     def execute(self, file_path: str, content: str) -> ToolResult:
-        full_path = self._safe_path(file_path)
+        full_path = self._safe_path(self.worktree_path, file_path)
         if full_path is None:
             raise PermissionError(f"Access denied: {file_path}")
 
@@ -135,11 +121,11 @@ class InsertAfterTool(BaseTool):
             "Use to ADD new functions/classes without overwriting existing content. "
             "anchor_pattern is a unique substring of the line after which to insert."
         )
-        self.worktree_path = os.path.realpath(worktree_path)
+        self.worktree_path = worktree_path
 
     def execute(self, file_path: str, anchor_pattern: str, content: str) -> ToolResult:
-        full_path = os.path.realpath(os.path.join(self.worktree_path, file_path))
-        if not full_path.startswith(self.worktree_path + os.sep):
+        full_path = self._safe_path(self.worktree_path, file_path)
+        if full_path is None:
             raise PermissionError(f"Access denied: {file_path}")
         if not os.path.isfile(full_path):
             return self.format_result(f"Error: File not found: {file_path}")
