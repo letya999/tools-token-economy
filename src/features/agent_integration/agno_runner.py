@@ -166,7 +166,8 @@ class AgnoRunner:
         success = made_changes and res.outcome != "failed"
 
         if not success and made_changes:
-            _log.warning("Validation failed (%s). Stderr:\n%s", res.method_used, res.stderr[-1000:])
+            _log.warning("Validation failed (%s). Stdout:\n%s\nStderr:\n%s",
+                         res.method_used, res.stdout[-500:], res.stderr[-500:])
 
         return success, res.tests_passed, res.tests_failed, patch_lines, res.outcome, made_changes
 

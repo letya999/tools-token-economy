@@ -137,15 +137,15 @@ class ExecutionValidator:
 
     def _rewrite_uv_run(self, cmd: str, venv_path: str) -> str:
         """
-        Transform `uv run [--extra X]... TOOL [ARGS]` into:
-            uv sync --project WORKTREE [--extra X]... && VENV/bin/TOOL [ARGS]
+        Insert `--project WORKTREE` into `uv run [--extra X]... TOOL ARGS`.
 
         On NTFS mounts in WSL, uv cannot auto-discover pyproject.toml via
-        directory traversal. Passing --project bypasses discovery; then we
-        invoke the tool directly from the venv so uv is not involved at all.
+        directory traversal. Passing --project bypasses traversal so uv reads
+        pyproject.toml directly from the worktree path.
+
+        Only applied inside git worktrees (where .git is a file, not a dir).
+        In the main repo uv discovers pyproject.toml normally.
         """
-        # Only rewrite inside git worktrees (where .git is a file, not a dir).
-        # In the main repo, uv can discover pyproject.toml normally on NTFS.
         git_entry = os.path.join(self.worktree_path, ".git")
         if os.path.isdir(git_entry):
             return cmd
@@ -158,30 +158,9 @@ class ExecutionValidator:
         if len(tokens) < 3 or tokens[0] != "uv" or tokens[1] != "run":
             return cmd
 
-        extras: list[str] = []
-        i = 2
-        while i < len(tokens):
-            if tokens[i] == "--extra" and i + 1 < len(tokens):
-                extras.append(tokens[i + 1])
-                i += 2
-            else:
-                break
-
-        if i >= len(tokens):
-            return cmd  # no tool token found
-
-        tool = tokens[i]
-        tool_args = tokens[i + 1:]
-
-        sync_parts = ["uv", "sync", "--project", self.worktree_path]
-        for extra in extras:
-            sync_parts += ["--extra", extra]
-        sync_cmd = shlex.join(sync_parts)
-
-        venv_bin = os.path.join(venv_path, "bin", tool)
-        run_cmd = shlex.join([venv_bin] + tool_args)
-
-        return f"{sync_cmd} && {run_cmd}"
+        # Inject --project right after "uv run"
+        new_tokens = ["uv", "run", "--project", self.worktree_path] + tokens[2:]
+        return shlex.join(new_tokens)
 
     def _run_cmd(self, cmd: str, method: str, eval_env: dict | None = None) -> ExecutionResult:
         # Isolate uv from the benchmark's own activated venv so it manages its own env.
