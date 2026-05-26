@@ -18,18 +18,17 @@ from dataclasses import dataclass
 
 _log = logging.getLogger(__name__)
 
-# Exit codes / stderr patterns that indicate environment failure (not agent failure)
+# Exit codes / stderr patterns that indicate environment failure (not agent failure).
+# Only matched against stderr (not stdout) to avoid false positives from build output.
 _ENV_ERROR_PATTERNS = [
     r"ModuleNotFoundError",
     r"No module named",
     r"command not found",
-    r"No such file or directory",
     r"Connection refused",
     r"ECONNREFUSED",
     r"address already in use",
     r"Permission denied",
     r"Cannot connect",
-    r"uvicorn",  # server start issues
 ]
 
 _ENV_ERROR_EXIT_CODES = {126, 127}
@@ -118,8 +117,8 @@ class ExecutionValidator:
     def _is_env_error(self, stdout: str, stderr: str, exit_code: int) -> bool:
         if exit_code in _ENV_ERROR_EXIT_CODES:
             return True
-        combined = stdout + stderr
-        return any(re.search(p, combined) for p in _ENV_ERROR_PATTERNS)
+        # Check stderr only — build stdout legitimately contains ambiguous phrases.
+        return any(re.search(p, stderr) for p in _ENV_ERROR_PATTERNS)
 
     def _parse_pytest_counts(self, output: str) -> tuple[int, int]:
         passed = failed = 0
@@ -137,9 +136,11 @@ class ExecutionValidator:
         return passed, failed
 
     def _run_cmd(self, cmd: str, method: str, eval_env: dict | None = None) -> ExecutionResult:
-        # Isolate uv's venv inside the worktree so it never touches the benchmark venv.
+        # Isolate uv from the benchmark's own activated venv so it manages its own env.
         env = os.environ.copy()
         env.pop("UV_PROJECT_ENVIRONMENT", None)
+        env.pop("VIRTUAL_ENV", None)
+        env.pop("VIRTUAL_ENV_PROMPT", None)
         env["UV_PROJECT_ENVIRONMENT"] = os.path.join(self.worktree_path, ".eval_venv")
         if eval_env:
             env.update(eval_env)

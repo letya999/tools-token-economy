@@ -38,8 +38,23 @@ class GitIsolationProvider:
             capture_output=True
         )
 
+        # Keep ephemeral eval dirs out of git so status/diff stay clean and
+        # worktree removal stays fast (git skips gitignored paths).
+        self._append_gitignore(wt_path, [".eval_venv", ".venv"])
+
         self.active_worktrees[run_id] = wt_path
         return wt_path
+
+    def _append_gitignore(self, wt_path: str, entries: list[str]) -> None:
+        gitignore = os.path.join(wt_path, ".gitignore")
+        try:
+            existing = open(gitignore).read() if os.path.exists(gitignore) else ""
+            with open(gitignore, "a") as f:
+                for entry in entries:
+                    if entry not in existing.splitlines():
+                        f.write(f"{entry}\n")
+        except Exception as e:
+            _log.debug("Could not update .gitignore in worktree: %s", e)
 
     def teardown(self, run_id: str):
         """
@@ -48,15 +63,21 @@ class GitIsolationProvider:
         wt_path = self.active_worktrees.get(run_id)
         if not wt_path and self.worktree_base:
             wt_path = os.path.join(self.worktree_base, run_id)
-        
+
         if not wt_path:
             return
 
-        # 1. Try official remove
+        # 1. Remove untracked large dirs first so git worktree remove is fast.
+        for untracked in [".eval_venv", ".venv", "__pycache__"]:
+            candidate = os.path.join(wt_path, untracked)
+            if os.path.exists(candidate):
+                shutil.rmtree(candidate, ignore_errors=True)
+
+        # 2. Try official remove with generous timeout for NTFS/WSL.
         try:
             subprocess.run(
                 [self.git_cmd, "worktree", "remove", "--force", wt_path],
-                cwd=self.repo_path, capture_output=True, timeout=15
+                cwd=self.repo_path, capture_output=True, timeout=60
             )
         except Exception as e:
             _log.warning("git worktree remove failed for %s: %s", wt_path, e)
