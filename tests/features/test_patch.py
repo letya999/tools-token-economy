@@ -30,8 +30,9 @@ def test_patch_applier_success(temp_repo_with_file):
         "+    print('hello world')\n"
     )
     applier = PatchApplier()
-    success = applier.apply(worktree_path=str(temp_repo_with_file), patch_text=patch_content)
+    success, err = applier.apply(worktree_path=str(temp_repo_with_file), patch_text=patch_content)
     assert success is True
+    assert err == ""
     content = (temp_repo_with_file / "app.py").read_text()
     assert "hello world" in content
 
@@ -39,5 +40,6 @@ def test_patch_applier_success(temp_repo_with_file):
 def test_patch_applier_invalid_patch(temp_repo_with_file):
     applier = PatchApplier()
     # Invalid diff format
-    success = applier.apply(str(temp_repo_with_file), "not a patch")
+    success, err = applier.apply(str(temp_repo_with_file), "not a patch")
     assert success is False
+    assert len(err) > 0

@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import contextlib
 import inspect
 import json
@@ -24,6 +25,8 @@ from src.core.tools import Tool
 from src.features.evaluation import EvalEngine
 from src.features.rate_limiter import RateLimiter
 
+from src.features.execution_validator import ExecutionValidator
+
 _log = logging.getLogger(__name__)
 
 class AgnoRunner:
@@ -39,6 +42,8 @@ class AgnoRunner:
         timeout_sec: int = 600,
         run_dir: str | None = None,
         mcp_configs: list[McpServerConfig] | None = None,
+        validation_cmd: str | None = None,
+        baseline_pass_count: int | None = None,
     ):
         self.config = config
         self.tools = tools
@@ -46,6 +51,8 @@ class AgnoRunner:
         self.timeout_sec = timeout_sec
         self.run_dir = run_dir
         self.mcp_configs = mcp_configs or []
+        self.validation_cmd = validation_cmd
+        self.baseline_pass_count = baseline_pass_count
         try:
             self._tokenizer = tiktoken.get_encoding("cl100k_base")
         except Exception:
@@ -104,81 +111,47 @@ class AgnoRunner:
             agno_tools_list.append(make_wrapper(t))
         return agno_tools_list
 
-    def _validate_run(self, worktree_path: str, test_cmd: str) -> tuple[bool, int, int]:
+    def _validate_run(self, worktree_path: str, test_cmd: str) -> tuple[bool, int, int, int]:
         """
-        Validates the run by checking git status and running only changed test files.
+        Validates the run using ExecutionValidator.
+        Returns (success, tests_passed, tests_failed, patch_lines).
         """
+        validator = ExecutionValidator(worktree_path, run_dir=self.run_dir)
+        
+        # 1. Capture patch details
+        patch_lines = 0
         try:
-            # 1. Detect all changed files
-            status = subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=worktree_path, capture_output=True, text=True
-            )
-            changed_files = []
-            for line in status.stdout.splitlines():
-                if len(line) < 3:
-                    continue
-                fname = line[3:].strip()
-                if " -> " in fname:
-                    fname = fname.split(" -> ", 1)[1]
-                changed_files.append(fname)
-
-            if not changed_files:
-                return False, 0, 0
-
-            # 2. Count patch lines and save patch
             diff_result = subprocess.run(
                 ["git", "diff", "HEAD"],
-                cwd=worktree_path, capture_output=True, text=True
+                cwd=worktree_path, capture_output=True, text=True, timeout=10
             )
             patch_lines = len([
                 line for line in diff_result.stdout.splitlines()
                 if line.startswith('+') or line.startswith('-')
             ])
-            
             if self.run_dir and os.path.isdir(self.run_dir):
-                patch_path = os.path.join(self.run_dir, "changes.patch")
+                patch_path = os.path.join(self.run_dir, "final.patch")
                 with open(patch_path, "w", encoding="utf-8") as f:
                     f.write(diff_result.stdout)
-
-            # 3. Filter to test files only
-            test_files = [
-                f for f in changed_files
-                if f.startswith("tests/") or os.path.basename(f).startswith("test_") or f.endswith("_test.py")
-            ]
-
-            if not test_files:
-                return False, 0, patch_lines
-
-            # 4. Build command
-            cmd_parts = shlex.split(test_cmd)
-            try:
-                pytest_idx = next(i for i, p in enumerate(cmd_parts) if p in ('pytest', 'py.test'))
-                runner_parts = cmd_parts[:pytest_idx + 1]
-            except StopIteration:
-                runner_parts = []
-                for part in cmd_parts:
-                    if part.startswith('-') or '/' in part or os.sep in part:
-                        break
-                    runner_parts.append(part)
-
-            specific_cmd = shlex.join(runner_parts + test_files + ["-x", "-q"])
-
-            # 5. Run via EvalEngine
-            engine = EvalEngine()
-            outcome = engine.evaluate(worktree_path, specific_cmd)
-
-            if not outcome.success:
-                _log.warning("Validation failed. Test output:\n%s", outcome.output[-3000:])
-
-            return outcome.success, outcome.tests_passed, patch_lines
-
-        except subprocess.TimeoutExpired:
-            _log.error("Validation timed out")
-            return False, 0, 0
         except Exception as e:
-            _log.error("Validation failed: %s", str(e))
-            return False, 0, 0
+            _log.warning("Failed to capture patch: %s", e)
+
+        # 2. Run validation
+        res = validator.validate(
+            validation_cmd=self.validation_cmd,
+            test_cmd=test_cmd,
+            baseline_pass_count=self.baseline_pass_count
+        )
+
+        # 3. Decision
+        # Success = made changes AND didn't fail execution
+        made_changes = patch_lines > 0
+        success = made_changes and res.outcome != "failed"
+
+        if not success and made_changes:
+            _log.warning("Validation failed (%s). Stderr:\n%s", res.method_used, res.stderr[-1000:])
+
+        return success, res.tests_passed, res.tests_failed, patch_lines
 
     def _extract_metrics_from_response(
         self,
@@ -294,28 +267,35 @@ class AgnoRunner:
 
                 all_tools = self._build_agno_tools() + mcp_tool_instances
                 agent = Agent(
-                    model=OpenAIChat(id=model_id),
+                    model=OpenAIChat(id=model_id, max_tokens=4096),
                     tools=all_tools,
                     instructions=[
                         f"You are a coding agent working in the repository at: {worktree_path}",
                         "Complete the task using only the tools provided.",
                         "Always use RELATIVE file paths (relative to the repository root) when calling file tools. Never use absolute paths.",
+                        "MANDATORY: You MUST call the `write` or `patch` tool to save your code changes to disk before saying TASK_COMPLETE. Reading files and thinking about changes is not enough - you must persist changes with a tool call.",
+                        "Workflow: (1) Use retrieval tools to understand the codebase. (2) Write your changes using `write` (full file) or `patch` (unified diff). (3) Verify by reading the file back. (4) Output exactly: TASK_COMPLETE",
                         "If a tool returns an error, try a different approach - do not repeat the exact same tool call.",
-                        "When done, output exactly: TASK_COMPLETE",
+                        "Never output TASK_COMPLETE if you have not called write or patch at least once.",
+                        "Efficiency: Use the `shell` tool's `multi_cmd` parameter to run multiple related commands in a single turn (e.g. `ls` then `cat`).",
                     ],
                     markdown=False,
                     tool_call_limit=self.config.max_steps,
                 )
 
                 with self._rate_limiter:
-                    response: RunOutput = await agent.arun(task_description)
+                    response: RunOutput = await asyncio.wait_for(
+                        agent.arun(task_description),
+                        timeout=float(self.timeout_sec),
+                    )
 
             metrics_data = self._extract_metrics_from_response(response, task_description, log_path)
 
             if worktree_path and os.path.isdir(worktree_path):
-                success, tests_passed, patch_lines = self._validate_run(worktree_path, test_cmd)
+                success, tests_passed, tests_failed, patch_lines = self._validate_run(worktree_path, test_cmd)
                 metrics_data["tests_passed"] = tests_passed
                 metrics_data["patch_lines"] = patch_lines
+                metrics_data["errors"] = tests_failed
             else:
                 content_str = (
                     response.get_content_as_string()
@@ -324,6 +304,9 @@ class AgnoRunner:
                 )
                 success = "TASK_COMPLETE" in content_str
 
+        except asyncio.TimeoutError:
+            _log.warning("Agent async run timed out after %ss", self.timeout_sec)
+            success = False
         except Exception:
             _log.exception("Agno MCP agent execution failed")
             success = False
@@ -380,14 +363,17 @@ class AgnoRunner:
         agno_tools_list = self._build_agno_tools()
 
         agent = Agent(
-            model=OpenAIChat(id=model_id),
+            model=OpenAIChat(id=model_id, max_tokens=4096),
             tools=agno_tools_list,
             instructions=[
                 f"You are a coding agent working in the repository at: {worktree_path}",
                 "Complete the task using only the tools provided.",
                 "Always use RELATIVE file paths (relative to the repository root) when calling file tools. Never use absolute paths.",
+                "MANDATORY: You MUST call the `write` or `patch` tool to save your code changes to disk before saying TASK_COMPLETE. Reading files and thinking about changes is not enough - you must persist changes with a tool call.",
+                "Workflow: (1) Use retrieval tools to understand the codebase. (2) Write your changes using `write` (full file) or `patch` (unified diff). (3) Verify by reading the file back. (4) Output exactly: TASK_COMPLETE",
                 "If a tool returns an error, try a different approach - do not repeat the exact same tool call.",
-                "When done, output exactly: TASK_COMPLETE",
+                "Never output TASK_COMPLETE if you have not called write or patch at least once.",
+                "Efficiency: Use the `shell` tool's `multi_cmd` parameter to run multiple related commands in a single turn (e.g. `ls` then `cat`).",
             ],
             markdown=False,
             tool_call_limit=self.config.max_steps,
@@ -397,14 +383,17 @@ class AgnoRunner:
         metrics_data: dict[str, Any] = {}
         try:
             with self._rate_limiter:
-                response: RunOutput = agent.run(task_description)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                    _future = _pool.submit(agent.run, task_description)
+                    response: RunOutput = _future.result(timeout=self.timeout_sec)
 
             metrics_data = self._extract_metrics_from_response(response, task_description, log_path)
 
             if worktree_path and os.path.isdir(worktree_path):
-                success, tests_passed, patch_lines = self._validate_run(worktree_path, test_cmd)
+                success, tests_passed, tests_failed, patch_lines = self._validate_run(worktree_path, test_cmd)
                 metrics_data["tests_passed"] = tests_passed
                 metrics_data["patch_lines"] = patch_lines
+                metrics_data["errors"] = tests_failed
             else:
                 content_str = (
                     response.get_content_as_string()
@@ -413,6 +402,9 @@ class AgnoRunner:
                 )
                 success = "TASK_COMPLETE" in content_str
 
+        except concurrent.futures.TimeoutError:
+            _log.warning("Agent sync run timed out after %ss", self.timeout_sec)
+            success = False
         except Exception:
             _log.exception("Agno agent execution failed")
             success = False

@@ -121,8 +121,48 @@ class PatchApplierTool(BaseTool):
         self.applier = PatchApplier()
 
     def execute(self, patch: str) -> ToolResult:
-        success = self.applier.apply(self.worktree_path, patch)
+        success, error_detail = self.applier.apply(self.worktree_path, patch)
         if success:
             return self.format_result("Patch applied successfully.")
         else:
-            return self.format_result("Error: Failed to apply patch.")
+            return self.format_result(f"Error: Failed to apply patch.\n{error_detail}")
+
+class InsertAfterTool(BaseTool):
+    def __init__(self, worktree_path: str):
+        super().__init__(
+            "insert_after",
+            "Inserts content after a specific line in an existing file. "
+            "Use to ADD new functions/classes without overwriting existing content. "
+            "anchor_pattern is a unique substring of the line after which to insert."
+        )
+        self.worktree_path = os.path.realpath(worktree_path)
+
+    def execute(self, file_path: str, anchor_pattern: str, content: str) -> ToolResult:
+        full_path = os.path.realpath(os.path.join(self.worktree_path, file_path))
+        if not full_path.startswith(self.worktree_path + os.sep):
+            raise PermissionError(f"Access denied: {file_path}")
+        if not os.path.isfile(full_path):
+            return self.format_result(f"Error: File not found: {file_path}")
+        
+        with open(full_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        
+        # Find anchor line (last occurrence if multiple)
+        anchor_idx = None
+        for i in range(len(lines) - 1, -1, -1):
+            if anchor_pattern in lines[i]:
+                anchor_idx = i
+                break
+        
+        if anchor_idx is None:
+            # Fall back to append if anchor not found
+            with open(full_path, "a", encoding="utf-8") as f:
+                f.write("\n" + content + "\n")
+            return self.format_result(f"Anchor '{anchor_pattern}' not found — content appended to end of {file_path}")
+        
+        # Insert after anchor
+        insertion = "\n" + content + "\n"
+        new_lines = lines[:anchor_idx + 1] + [insertion] + lines[anchor_idx + 1:]
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+        return self.format_result(f"Content inserted after line {anchor_idx + 1} in {file_path}")

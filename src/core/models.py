@@ -18,7 +18,11 @@ class BenchmarkMeta(BaseModel):
     repo: str
     task: str
     test_cmd: str = "pytest"
+    validation_cmd: str | None = None
     timeout_sec: int = 600
+    max_cost_usd_suite: float = 5.0
+    max_cost_usd_config: float = 0.15
+    max_tokens_per_config: int = 500_000
 
 
 class AgentConfig(BaseModel):
@@ -44,6 +48,10 @@ class RunMetrics(BaseModel):
     files_changed: int = 0
     patch_lines: int = 0
     errors: int = 0
+    execution_result: str = "not_verified"
+    made_changes: bool = False
+    cost_exceeded: bool = False
+    token_exceeded: bool = False
     task_solved_score: float = 0.0
     tool_correctness_score: float = 0.0
     judge_reasoning_task: str = ""
