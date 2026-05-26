@@ -72,19 +72,19 @@ class MetricsAggregator:
         if not rows:
             return "No results found to rank."
 
-        # Sort by task_solved_score desc, success_per_token desc, total_tokens asc
-        rows.sort(key=lambda r: (-r["task_solved"], -r["success_per_token"], r["total_tokens"]))
+        # Sort by success desc, task_solved_score desc, success_per_token desc, total_tokens asc
+        rows.sort(key=lambda r: (-int(r["success"]), -r["task_solved"], -r["success_per_token"], r["total_tokens"]))
 
         lines = [
             "# Benchmark Rankings",
             "",
-            "| # | Run | Success | Task Solved | Tool Correct | Total Tokens | Success/Token | Duration(s) | Model Calls | Tool Calls | Cost USD |",
-            "|---|-----|---------|-------------|--------------|--------------|---------------|-------------|-------------|------------|----------|",
+            "| # | Run | OK | Solved | Tools | Tokens | Success/Token | Dur(s) | Model | Tools | Cost USD |",
+            "|---|-----|----|--------|-------|--------|---------------|--------|-------|-------|----------|",
         ]
         for i, r in enumerate(rows, 1):
             ok = "✓" if r["success"] else "✗"
             lines.append(
-                f"| {i} | {r['run']} | {ok} | {r['task_solved']:.2f} | {r['tool_correct']:.2f} | {r['total_tokens']} | {r['success_per_token']:.6f} "
+                f"| {i} | {r['run']} | {ok} | {r['task_solved']:.2f} | {r['tool_correct']:.2f} | {r['total_tokens']} | {r['success_per_token']:.8f} "
                 f"| {r['duration_sec']} | {r['model_calls']} | {r['tool_calls']} | {r['cost_usd']:.6f} |"
             )
         output = "\n".join(lines)

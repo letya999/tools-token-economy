@@ -1,6 +1,9 @@
+import logging
 import os
 import shutil
 import subprocess
+
+_log = logging.getLogger(__name__)
 
 
 class GitIsolationProvider:
@@ -19,8 +22,14 @@ class GitIsolationProvider:
         """
         wt_path = os.path.join(self.worktree_base, run_id)
 
+        # Cleanup if directory already exists
         if os.path.exists(wt_path):
-            shutil.rmtree(wt_path)
+            try:
+                shutil.rmtree(wt_path)
+            except Exception:
+                _log.debug("Manual rmtree failed, trying worktree prune for %s", wt_path)
+                subprocess.run([self.git_cmd, "worktree", "prune"], cwd=self.repo_path)
+                shutil.rmtree(wt_path, ignore_errors=True)
 
         subprocess.run(
             [self.git_cmd, "worktree", "add", wt_path, "HEAD"],
@@ -37,22 +46,33 @@ class GitIsolationProvider:
         Removes the worktree after the run completes.
         """
         wt_path = self.active_worktrees.get(run_id)
+        if not wt_path and self.worktree_base:
+            wt_path = os.path.join(self.worktree_base, run_id)
+        
         if not wt_path:
             return
 
+        # 1. Try official remove
         try:
             subprocess.run(
                 [self.git_cmd, "worktree", "remove", "--force", wt_path],
-                cwd=self.repo_path,
-                check=True,
-                capture_output=True
+                cwd=self.repo_path, capture_output=True, timeout=15
             )
-        except subprocess.CalledProcessError:
-            # Worktree may already be gone; fall through to filesystem cleanup
-            pass
+        except Exception as e:
+            _log.warning("git worktree remove failed for %s: %s", wt_path, e)
 
+        # 2. Prune metadata
+        try:
+            subprocess.run([self.git_cmd, "worktree", "prune"], cwd=self.repo_path, capture_output=True)
+        except Exception as e:
+            _log.debug("git worktree prune failed: %s", e)
+
+        # 3. Aggressive filesystem cleanup
         if os.path.exists(wt_path):
-            shutil.rmtree(wt_path, ignore_errors=True)
+            try:
+                shutil.rmtree(wt_path, ignore_errors=True)
+            except Exception as e:
+                _log.debug("Final rmtree failed for %s: %s", wt_path, e)
 
         if run_id in self.active_worktrees:
             del self.active_worktrees[run_id]
