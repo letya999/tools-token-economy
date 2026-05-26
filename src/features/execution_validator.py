@@ -135,15 +135,62 @@ class ExecutionValidator:
 
         return passed, failed
 
+    def _rewrite_uv_run(self, cmd: str, venv_path: str) -> str:
+        """
+        Transform `uv run [--extra X]... TOOL [ARGS]` into:
+            uv sync --project WORKTREE [--extra X]... && VENV/bin/TOOL [ARGS]
+
+        On NTFS mounts in WSL, uv cannot auto-discover pyproject.toml via
+        directory traversal. Passing --project bypasses discovery; then we
+        invoke the tool directly from the venv so uv is not involved at all.
+        """
+        import shlex
+        try:
+            tokens = shlex.split(cmd)
+        except ValueError:
+            return cmd
+        if len(tokens) < 3 or tokens[0] != "uv" or tokens[1] != "run":
+            return cmd
+
+        extras: list[str] = []
+        i = 2
+        while i < len(tokens):
+            if tokens[i] == "--extra" and i + 1 < len(tokens):
+                extras.append(tokens[i + 1])
+                i += 2
+            else:
+                break
+
+        if i >= len(tokens):
+            return cmd  # no tool token found
+
+        tool = tokens[i]
+        tool_args = tokens[i + 1:]
+
+        sync_parts = ["uv", "sync", "--project", self.worktree_path]
+        for extra in extras:
+            sync_parts += ["--extra", extra]
+        sync_cmd = shlex.join(sync_parts)
+
+        venv_bin = os.path.join(venv_path, "bin", tool)
+        run_cmd = shlex.join([venv_bin] + tool_args)
+
+        return f"{sync_cmd} && {run_cmd}"
+
     def _run_cmd(self, cmd: str, method: str, eval_env: dict | None = None) -> ExecutionResult:
         # Isolate uv from the benchmark's own activated venv so it manages its own env.
         env = os.environ.copy()
         env.pop("UV_PROJECT_ENVIRONMENT", None)
         env.pop("VIRTUAL_ENV", None)
         env.pop("VIRTUAL_ENV_PROMPT", None)
-        env["UV_PROJECT_ENVIRONMENT"] = os.path.join(self.worktree_path, ".eval_venv")
+        venv_path = os.path.join(self.worktree_path, ".eval_venv")
+        env["UV_PROJECT_ENVIRONMENT"] = venv_path
         if eval_env:
             env.update(eval_env)
+
+        # Bypass uv's NTFS project-discovery bug in WSL worktrees.
+        cmd = self._rewrite_uv_run(cmd, venv_path)
+        _log.debug("Validation cmd: %s", cmd)
 
         try:
             proc = subprocess.run(
