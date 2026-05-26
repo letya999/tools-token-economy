@@ -144,6 +144,12 @@ class ExecutionValidator:
         directory traversal. Passing --project bypasses discovery; then we
         invoke the tool directly from the venv so uv is not involved at all.
         """
+        # Only rewrite inside git worktrees (where .git is a file, not a dir).
+        # In the main repo, uv can discover pyproject.toml normally on NTFS.
+        git_entry = os.path.join(self.worktree_path, ".git")
+        if os.path.isdir(git_entry):
+            return cmd
+
         import shlex
         try:
             tokens = shlex.split(cmd)
