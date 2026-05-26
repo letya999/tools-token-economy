@@ -228,13 +228,12 @@ class ExecutionValidator:
         res.tests_failed = failed
 
         if baseline_pass_count is not None:
-            # Success means no regressions: exit clean, no failures, and at least as many passing.
-            if failed > 0 or res.exit_code != 0:
-                res.outcome = "failed"
-            elif passed >= baseline_pass_count:
+            # Compare pass count against baseline. Pre-existing failures in the target
+            # repo are ignored — we only care that the agent didn't regress passing tests.
+            # An env_error still surfaces via the early return above.
+            if passed >= baseline_pass_count:
                 res.outcome = "passed"
             else:
-                # Fewer tests passed than baseline but none failed - agent deleted tests.
                 res.outcome = "failed"
         else:
             # No baseline. Standard pass/fail.

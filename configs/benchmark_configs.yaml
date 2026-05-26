@@ -1,6 +1,6 @@
 benchmark:
   repo: "C:\\Users\\User\\a_projects\\process_metrics_platform_v2"
-  test_cmd: "uv run --extra dev pytest tests/unit/ -x -q"
+  test_cmd: "uv run --extra dev pytest tests/unit/ -q"
   timeout_sec: 1200
   task: >
     Add exactly ONE new async test function to tests/unit/test_api_google_oauth.py.
