@@ -83,12 +83,8 @@ class BaseToolValidator:
         return None
 
     def configure(self, repo_path: str) -> ValidationResult:
-        """One-time configuration (e.g., create .serena/project.yml)."""        
-        return ValidationResult(passed=True, detail="no configuration needed")  
-
-    def prepare(self, repo_path: str) -> ValidationResult:
-        """Expensive one-time preparation (e.g., RAG ingestion, repo map build)."""
-        return ValidationResult(passed=True, detail="no preparation needed")    
+        """One-time configuration (e.g., create .serena/project.yml)."""
+        return ValidationResult(passed=True, detail="no configuration needed")
 
     def install(self, platform: str) -> ValidationResult:
         """Attempt to install the tool on the given platform."""

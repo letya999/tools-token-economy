@@ -48,6 +48,7 @@ class RunMetrics(BaseModel):
     files_changed: int = 0
     patch_lines: int = 0
     errors: int = 0
+    tool_errors: int = 0
     execution_result: str = "not_verified"
     made_changes: bool = False
     cost_exceeded: bool = False

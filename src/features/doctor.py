@@ -84,14 +84,6 @@ class Doctor:
         print("="*40 + "\n")
         return all_passed
 
-        print("\n" + "="*40)
-        if all_passed:
-            print("RESULT: Infrastructure is HEALTHY.")
-        else:
-            print("RESULT: Infrastructure has ISSUES. See details above.")
-        print("="*40 + "\n")
-        return all_passed
-
     def _print_res(self, label: str, res: ValidationResult):
         status = "PASSED" if res.passed else "FAILED"
         if res.skipped: status = "SKIPPED"

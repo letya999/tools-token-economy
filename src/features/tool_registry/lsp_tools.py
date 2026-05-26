@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 
 import jedi
@@ -26,7 +28,9 @@ class LspSymbolsTool(BaseTool):
 
     def _analyze_file(self, file_path: str, project: jedi.Project) -> ToolResult:
         """List all symbols in a file."""
-        abs_path = os.path.join(self.worktree_path, file_path)
+        abs_path = self._safe_path(self.worktree_path, file_path)
+        if abs_path is None:
+            return self.format_result(f"Access denied: {file_path}")
         if not os.path.exists(abs_path):
             return self.format_result(f"File not found: {file_path}")
 
@@ -49,7 +53,7 @@ class LspSymbolsTool(BaseTool):
                 real_fpath = os.path.realpath(fpath)
                 
                 # Filter: must be inside worktree AND not in venv/site-packages
-                is_inside = real_fpath.startswith(self.worktree_path)
+                is_inside = real_fpath.startswith(self.worktree_path + os.sep) or real_fpath == self.worktree_path
                 is_external = ".venv" in real_fpath or "site-packages" in real_fpath
                 
                 if is_inside and not is_external:

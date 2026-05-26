@@ -92,6 +92,11 @@ class GlobTool(BaseTool):
         search_pattern = os.path.join(self.worktree_path, pattern)
         try:
             matches = glob.glob(search_pattern, recursive=True)
+            worktree_real = os.path.realpath(self.worktree_path)
+            matches = [
+                m for m in matches
+                if os.path.realpath(m).startswith(worktree_real + os.sep) or os.path.realpath(m) == worktree_real
+            ]
             rel_matches = [os.path.relpath(m, self.worktree_path) for m in matches]
             output = "\n".join(rel_matches)
             if not output:

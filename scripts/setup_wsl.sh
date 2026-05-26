@@ -4,7 +4,9 @@
 set -e
 
 # 1. Node / OpenCode
-if ! command -v npm &>/dev/null; then
+# Check for native Linux node — Windows npm on /mnt/c is visible here but
+# its node binary is not, so checking 'npm' gives a false positive.
+if ! command -v node &>/dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi

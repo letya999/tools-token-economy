@@ -45,7 +45,7 @@ def test_save_run_computes_success_per_token(tmp_path):
                           input_tokens=1000, output_tokens=0, tool_tokens=0)
     save_dir = agg.save_run(result)
     data = json.loads(open(os.path.join(save_dir, "metrics.json")).read())
-    assert data["success_per_token"] == pytest.approx(1.0 / 1000)
+    assert data["success_per_token"] == pytest.approx(1_000_000.0 / 1000)
 
 
 def test_save_run_zero_token_success_per_token(tmp_path):

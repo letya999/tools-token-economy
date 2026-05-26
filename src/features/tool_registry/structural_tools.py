@@ -16,7 +16,9 @@ class TreeSitterTool(BaseTool):
         self.parser = Parser(self.PY_LANGUAGE)
 
     def execute(self, file_path: str) -> ToolResult:
-        full_path = os.path.join(self.worktree_path, file_path)
+        full_path = self._safe_path(self.worktree_path, file_path)
+        if full_path is None:
+            return self.format_result(f"Access denied: {file_path}")
         if not os.path.isfile(full_path):
             return self.format_result(f"Error: File not found: {file_path}")
 

@@ -111,6 +111,24 @@ class AgnoRunner:
             agno_tools_list.append(make_wrapper(t))
         return agno_tools_list
 
+    def _build_agent(self, model_id: str, tools: list, worktree_path: str) -> Agent:
+        return Agent(
+            model=OpenAIChat(id=model_id, max_tokens=4096),
+            tools=tools,
+            instructions=[
+                f"You are a coding agent working in the repository at: {worktree_path}",
+                "Complete the task using only the tools provided.",
+                "Always use RELATIVE file paths (relative to the repository root) when calling file tools. Never use absolute paths.",
+                "MANDATORY: You MUST call the `write` or `patch` tool to save your code changes to disk before saying TASK_COMPLETE. Reading files and thinking about changes is not enough - you must persist changes with a tool call.",
+                "Workflow: (1) Use retrieval tools to understand the codebase. (2) Write your changes using `write` (full file) or `patch` (unified diff). (3) Verify by reading the file back. (4) Output exactly: TASK_COMPLETE",
+                "If a tool returns an error, try a different approach - do not repeat the exact same tool call.",
+                "Never output TASK_COMPLETE if you have not called write or patch at least once.",
+                "Efficiency: Use the `shell` tool's `multi_cmd` parameter to run multiple related commands in a single turn (e.g. `ls` then `cat`).",
+            ],
+            markdown=False,
+            tool_call_limit=self.config.max_steps,
+        )
+
     def _validate_run(self, worktree_path: str, test_cmd: str) -> tuple[bool, int, int, int, str, bool]:
         """
         Validates the run using ExecutionValidator.
@@ -161,7 +179,7 @@ class AgnoRunner:
         metrics_data: dict[str, Any] = {
             "input_tokens": 0, "output_tokens": 0, "tool_tokens": 0,
             "model_calls": 0, "tool_calls": 0, "files_read": 0,
-            "files_changed": 0, "patch_lines": 0, "errors": 0,
+            "files_changed": 0, "patch_lines": 0, "errors": 0, "tool_errors": 0,
             "tests_passed": 0,
         }
 
@@ -169,10 +187,18 @@ class AgnoRunner:
             try:
                 messages = []
                 for m in (response.messages or []):
+                    raw_tc = getattr(m, "tool_calls", None)
+                    if raw_tc is not None:
+                        try:
+                            tc_safe = json.loads(json.dumps(raw_tc, default=str))
+                        except Exception:
+                            tc_safe = str(raw_tc)
+                    else:
+                        tc_safe = None
                     messages.append({
                         "role": getattr(m, "role", "unknown"),
                         "content": getattr(m, "content", ""),
-                        "tool_calls": getattr(m, "tool_calls", None),
+                        "tool_calls": tc_safe,
                     })
                 with open(log_path, "w", encoding="utf-8") as f:
                     json.dump(messages, f, indent=2)
@@ -216,7 +242,7 @@ class AgnoRunner:
             elif name in _write_tools and not is_error:
                 metrics_data["files_changed"] += 1
             if is_error:
-                metrics_data["errors"] += 1
+                metrics_data["tool_errors"] += 1
 
         return metrics_data
 
@@ -267,25 +293,9 @@ class AgnoRunner:
                     mcp_tool_instances.append(mcp_inst)
 
                 all_tools = self._build_agno_tools() + mcp_tool_instances
-                agent = Agent(
-                    model=OpenAIChat(id=model_id, max_tokens=4096),
-                    tools=all_tools,
-                    instructions=[
-                        f"You are a coding agent working in the repository at: {worktree_path}",
-                        "Complete the task using only the tools provided.",
-                        "Always use RELATIVE file paths (relative to the repository root) when calling file tools. Never use absolute paths.",
-                        "MANDATORY: You MUST call the `write` or `patch` tool to save your code changes to disk before saying TASK_COMPLETE. Reading files and thinking about changes is not enough - you must persist changes with a tool call.",
-                        "Workflow: (1) Use retrieval tools to understand the codebase. (2) Write your changes using `write` (full file) or `patch` (unified diff). (3) Verify by reading the file back. (4) Output exactly: TASK_COMPLETE",
-                        "If a tool returns an error, try a different approach - do not repeat the exact same tool call.",
-                        "Never output TASK_COMPLETE if you have not called write or patch at least once.",
-                        "Efficiency: Use the `shell` tool's `multi_cmd` parameter to run multiple related commands in a single turn (e.g. `ls` then `cat`).",
-                    ],
-                    markdown=False,
-                    tool_call_limit=self.config.max_steps,
-                )
+                agent = self._build_agent(model_id, all_tools, worktree_path)
 
-                with self._rate_limiter:
-                    response: RunOutput = await asyncio.wait_for(
+                response: RunOutput = await asyncio.wait_for(
                         agent.arun(task_description),
                         timeout=float(self.timeout_sec),
                     )
@@ -323,7 +333,7 @@ class AgnoRunner:
             **(metrics_data or {
                 "input_tokens": 0, "output_tokens": 0, "tool_tokens": 0,
                 "model_calls": 0, "tool_calls": 0, "files_read": 0,
-                "files_changed": 0, "patch_lines": 0, "errors": 0,
+                "files_changed": 0, "patch_lines": 0, "errors": 0, "tool_errors": 0,
                 "tests_passed": 0, "execution_result": "not_verified", "made_changes": False,
             }),
         )
@@ -363,23 +373,7 @@ class AgnoRunner:
 
         model_id = self._extract_model_id()
         agno_tools_list = self._build_agno_tools()
-
-        agent = Agent(
-            model=OpenAIChat(id=model_id, max_tokens=4096),
-            tools=agno_tools_list,
-            instructions=[
-                f"You are a coding agent working in the repository at: {worktree_path}",
-                "Complete the task using only the tools provided.",
-                "Always use RELATIVE file paths (relative to the repository root) when calling file tools. Never use absolute paths.",
-                "MANDATORY: You MUST call the `write` or `patch` tool to save your code changes to disk before saying TASK_COMPLETE. Reading files and thinking about changes is not enough - you must persist changes with a tool call.",
-                "Workflow: (1) Use retrieval tools to understand the codebase. (2) Write your changes using `write` (full file) or `patch` (unified diff). (3) Verify by reading the file back. (4) Output exactly: TASK_COMPLETE",
-                "If a tool returns an error, try a different approach - do not repeat the exact same tool call.",
-                "Never output TASK_COMPLETE if you have not called write or patch at least once.",
-                "Efficiency: Use the `shell` tool's `multi_cmd` parameter to run multiple related commands in a single turn (e.g. `ls` then `cat`).",
-            ],
-            markdown=False,
-            tool_call_limit=self.config.max_steps,
-        )
+        agent = self._build_agent(model_id, agno_tools_list, worktree_path)
 
         success = False
         metrics_data: dict[str, Any] = {}
@@ -422,7 +416,7 @@ class AgnoRunner:
             **(metrics_data or {
                 "input_tokens": 0, "output_tokens": 0, "tool_tokens": 0,
                 "model_calls": 0, "tool_calls": 0, "files_read": 0,
-                "files_changed": 0, "patch_lines": 0, "errors": 0,
+                "files_changed": 0, "patch_lines": 0, "errors": 0, "tool_errors": 0,
                 "tests_passed": 0, "execution_result": "not_verified", "made_changes": False,
             }),
         )
@@ -434,5 +428,5 @@ class AgnoRunner:
             output_tokens=self._count_tokens("TASK_COMPLETE"),
             tool_tokens=0, duration_sec=time.time() - start_time,
             model_calls=1, tool_calls=0, model_name=self.config.model,
-            files_read=0, files_changed=0, patch_lines=0, errors=0
+            files_read=0, files_changed=0, patch_lines=0, errors=0, tool_errors=0
         )

@@ -1,13 +1,17 @@
 #!/bin/bash
 # Install Serena MCP server and create global config.
-# Must run AFTER uv is available. Sets UV_LINK_MODE=copy for /mnt/c paths.
+# Must run AFTER uv AND node are available (run install_node.sh first).
+# Sets UV_LINK_MODE=copy for /mnt/c paths.
 set -e
 export UV_LINK_MODE=copy
 
-# Prefer uv tool install (global binary, no venv dependency) per Serena docs.
-# Fall back to uv pip install into current env if uv tool fails.
+# Install serena-agent with pyright[nodejs] bundled.
+# pyright[nodejs] includes a self-contained node runtime inside serena's tool
+# venv as a second layer of defence if the system node is ever missing.
 if command -v uv &>/dev/null; then
-    uv tool install -p 3.13 "serena-agent@latest" --prerelease=allow 2>/dev/null \
+    uv tool install -p 3.13 "serena-agent@latest" --prerelease=allow \
+        --with "pyright[nodejs]" 2>/dev/null \
+        || uv tool install -p 3.13 "serena-agent@latest" --prerelease=allow 2>/dev/null \
         || uv pip install "serena-agent>=1.5.0"
 fi
 
@@ -59,4 +63,4 @@ else
     echo "[serena] Global config already exists at $SERENA_HOME/serena_config.yml"
 fi
 
-echo "[serena] Install complete. Binary at: $(command -v serena 2>/dev/null || echo 'NOT FOUND — restart shell or add ~/.local/bin to PATH')"
+echo "[serena] Install complete. Binary: $(command -v serena 2>/dev/null || echo 'NOT FOUND — add ~/.local/bin to PATH')"

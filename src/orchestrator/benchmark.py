@@ -8,7 +8,7 @@ import time
 from typing import Any
 
 from src.core.config_loader import load_benchmark_configs, load_benchmark_meta
-from src.core.models import EvalResult, McpServerConfig
+from src.core.models import EvalResult, McpServerConfig, RunMetrics
 from src.features.tool_registry.registry import ToolRegistry
 from src.features.execution_validator import ExecutionValidator
 from src.features.agent_integration.agno_runner import AgnoRunner
@@ -18,20 +18,6 @@ from src.features.llm_judge import LLMJudge
 from src.features.metrics_aggregator import MetricsAggregator
 from src.features.preflight import PreflightChecker
 from src.features.prompt_builder import build_tool_restriction_prefix
-
-
-_MCP_TOOL_REGISTRY: dict[str, McpServerConfig] = {
-    "serena": McpServerConfig(
-        tool_name="serena",
-        command="serena",
-        args_template=["start-mcp-server", "--project", "{path}"],
-    ),
-    "semble": McpServerConfig(
-        tool_name="semble",
-        command="uvx",
-        args_template=["--from", "semble[mcp]", "semble", "mcp", "--path", "{path}"],
-    ),
-}
 
 
 def _to_platform_path(path: str) -> str:
@@ -50,6 +36,19 @@ class BenchmarkOrchestrator:
     """
     Main orchestrator for running the benchmark suite.
     """
+
+    _MCP_TOOL_REGISTRY: dict[str, McpServerConfig] = {
+        "serena": McpServerConfig(
+            tool_name="serena",
+            command="serena",
+            args_template=["start-mcp-server", "--project", "{path}"],
+        ),
+        "semble": McpServerConfig(
+            tool_name="semble",
+            command="uvx",
+            args_template=["--from", "semble[mcp]", "semble", "{path}"],
+        ),
+    }
 
     def __init__(
         self,
@@ -106,7 +105,7 @@ class BenchmarkOrchestrator:
 
     def _get_mcp_configs_for_config(self, config: Any) -> list[McpServerConfig]:
         """Return McpServerConfig instances for any MCP-backed tools in config."""
-        return [_MCP_TOOL_REGISTRY[t] for t in config.tools if t in _MCP_TOOL_REGISTRY]
+        return [self._MCP_TOOL_REGISTRY[t] for t in config.tools if t in self._MCP_TOOL_REGISTRY]
 
     def _preingest_rag_tools(self, tools: list, config_id: str) -> None:
         """Pre-build RAG index on the actual tool instances the runner will use.
@@ -137,13 +136,9 @@ class BenchmarkOrchestrator:
         self.logger.info("Capturing baseline test pass count...")
         try:
             validator = ExecutionValidator(self.repo_path)
-            res = validator.validate(
-                validation_cmd=self.validation_cmd,
-                test_cmd=self.test_cmd,
-                baseline_pass_count=None  # We ARE the baseline
-            )
-            self.logger.info("Baseline captured: %d passed", res.tests_passed)
-            return res.tests_passed
+            count = validator.measure_test_baseline(self.test_cmd)
+            self.logger.info("Baseline captured: %d passed", count)
+            return count
         except Exception as e:
             self.logger.warning("Failed to capture baseline: %s", e)
             return 0
@@ -158,8 +153,8 @@ class BenchmarkOrchestrator:
         """Run one config end-to-end: setup worktree, run agent, judge, save result."""
         worktree_path = None
         tools: list = []
+        run_dir = os.path.join(self.results_dir, run_id)
         try:
-            run_dir = os.path.join(self.results_dir, run_id)
             os.makedirs(run_dir, exist_ok=True)
             log_path = os.path.join(run_dir, "agent_messages.json")
 
@@ -239,6 +234,20 @@ class BenchmarkOrchestrator:
 
         except Exception:
             self.logger.exception("Error running config %s", config.id)
+            try:
+                self.aggregator.save_run(EvalResult(
+                    run_id=run_id,
+                    config_id=config.id,
+                    metrics=RunMetrics(
+                        success=False, eval_score=0.0,
+                        input_tokens=0, output_tokens=0, tool_tokens=0,
+                        duration_sec=0.0, model_calls=0, tool_calls=0,
+                    ),
+                    success=False,
+                    error="runner_exception",
+                ))
+            except Exception:
+                pass
         finally:
             for tool in tools:
                 if hasattr(tool, "close"):

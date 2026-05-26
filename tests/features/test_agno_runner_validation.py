@@ -19,7 +19,7 @@ def test_validate_run_no_changes(runner):
         # All calls return empty (no changes in diff or status)
         mock_run.return_value = MagicMock(stdout="", returncode=0)
 
-        success, tests_passed, tests_failed, patch_lines = runner._validate_run("/tmp/wt", "pytest")
+        success, tests_passed, tests_failed, patch_lines, *_ = runner._validate_run("/tmp/wt", "pytest")
 
         assert success is False
         assert tests_passed == 0
@@ -36,7 +36,7 @@ def test_validate_run_no_test_files(runner):
             MagicMock(returncode=0),                               # py_compile syntax check
         ]
 
-        success, tests_passed, tests_failed, patch_lines = runner._validate_run("/tmp/wt", "pytest")
+        success, tests_passed, tests_failed, patch_lines, *_ = runner._validate_run("/tmp/wt", "pytest")
 
         # Universal eval: made changes + syntax OK = success (outcome "not_verified", not "failed")
         assert success is True
@@ -53,7 +53,7 @@ def test_validate_run_test_passed(runner):
             MagicMock(stdout="2 passed in 0.1s", stderr="", returncode=0),  # pytest
         ]
 
-        success, tests_passed, tests_failed, patch_lines = runner._validate_run("/tmp/wt", "pytest")
+        success, tests_passed, tests_failed, patch_lines, *_ = runner._validate_run("/tmp/wt", "pytest")
 
         assert success is True
         assert tests_passed == 2
@@ -70,7 +70,7 @@ def test_validate_run_test_failed(runner):
             MagicMock(stdout="1 failed in 0.1s", stderr="", returncode=1),  # pytest
         ]
 
-        success, tests_passed, tests_failed, patch_lines = runner._validate_run("/tmp/wt", "pytest")
+        success, tests_passed, tests_failed, patch_lines, *_ = runner._validate_run("/tmp/wt", "pytest")
 
         assert success is False
         assert tests_passed == 0

@@ -10,9 +10,8 @@ class ReadValidator(BaseToolValidator):
 
     def smoke_test(self, tmp_dir: str) -> ValidationResult:
         tool = FileReadTool(tmp_dir)
-        # Try to read a file that might exist
-        import os
-        test_file = os.path.join(tmp_dir, "test_smoke.py")
-        result = tool.execute(file_path="test_smoke.py")
+        # Seeded file name is smoke_test_file.txt (from Doctor.check_all)
+        result = tool.execute(file_path="smoke_test_file.txt")
         passed = "Error:" not in str(result.output)
-        return ValidationResult(passed=passed, detail=str(result.output)[:100]) 
+        return ValidationResult(passed=passed, detail=str(result.output)[:100])
+ 

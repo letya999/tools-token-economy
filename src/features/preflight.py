@@ -303,10 +303,12 @@ class PreflightChecker:
         results = []
         for primary_var, candidates in required_vars.items():
             found = any(os.getenv(v) for v in candidates)
+            # In dry-run mode no real API calls are made, so missing keys are non-fatal.
+            level = "warning" if self.dry_run else "critical"
             results.append(PreflightResult(
                 name=f"API key: {primary_var}",
                 passed=found,
-                level="critical",
+                level=level,
                 detail="" if found else f"Set one of: {', '.join(candidates)}",
             ))
         return results

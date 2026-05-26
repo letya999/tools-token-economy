@@ -127,7 +127,10 @@ class PatchApplier:
         if has_deletions or not target_file or not additions:
             return False, "Patch has deletions or no target file — cannot use additive fast-path"
         
-        full_path = os.path.join(cwd, target_file)
+        real_cwd = os.path.realpath(cwd)
+        full_path = os.path.realpath(os.path.join(cwd, target_file))
+        if not (full_path.startswith(real_cwd + os.sep) or full_path == real_cwd):
+            return False, f"Path traversal blocked: {target_file}"
         if not os.path.isfile(full_path):
             return False, f"Target file not found: {target_file}"
         
