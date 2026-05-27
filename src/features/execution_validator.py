@@ -16,6 +16,7 @@ import os
 import re
 import signal
 import subprocess
+import sys
 from dataclasses import dataclass
 
 _log = logging.getLogger(__name__)
@@ -31,6 +32,12 @@ _ENV_ERROR_PATTERNS = [
     r"address already in use",
     r"Permission denied",
     r"Cannot connect",
+]
+
+_ENV_ERROR_PATTERNS_STDOUT = [
+    r"ModuleNotFoundError",
+    r"No module named",
+    r"ImportError",
 ]
 
 _ENV_ERROR_EXIT_CODES = {126, 127}
@@ -119,8 +126,12 @@ class ExecutionValidator:
     def _is_env_error(self, stdout: str, stderr: str, exit_code: int) -> bool:
         if exit_code in _ENV_ERROR_EXIT_CODES:
             return True
-        # Check stderr only — build stdout legitimately contains ambiguous phrases.
-        return any(re.search(p, stderr) for p in _ENV_ERROR_PATTERNS)
+        if any(re.search(p, stderr) for p in _ENV_ERROR_PATTERNS):
+            return True
+        # Pytest collection errors appear in stdout — check specifically for import failures
+        if any(re.search(p, stdout) for p in _ENV_ERROR_PATTERNS_STDOUT):
+            return True
+        return False
 
     def _parse_pytest_counts(self, output: str) -> tuple[int, int]:
         passed = failed = 0
@@ -189,17 +200,26 @@ class ExecutionValidator:
             # is killed on timeout. subprocess.run(shell=True, timeout=X) only kills the
             # shell, leaving uv/pytest alive holding pipe fds — Python then hangs forever
             # waiting for EOF on those pipes.
-            proc = subprocess.Popen(
-                cmd, shell=True, cwd=self.worktree_path,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, env=env,
-                preexec_fn=os.setsid,
-            )
+            popen_kwargs = {
+                "shell": True,
+                "cwd": self.worktree_path,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
+                "env": env,
+            }
+            if sys.platform != "win32":
+                popen_kwargs["preexec_fn"] = getattr(os, "setsid", None)
+
+            proc = subprocess.Popen(cmd, **popen_kwargs)
             try:
                 stdout, stderr = proc.communicate(timeout=self.timeout_sec)
             except subprocess.TimeoutExpired:
                 try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    if sys.platform != "win32":
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    else:
+                        proc.kill()
                 except ProcessLookupError:
                     pass
                 proc.wait()
@@ -217,6 +237,8 @@ class ExecutionValidator:
 
             return ExecutionResult(outcome="failed", method_used=method, stdout=stdout, stderr=stderr, exit_code=exit_code)
         except Exception as e:
+            import traceback
+            _log.error("Execution failed: %s\n%s", e, traceback.format_exc())
             return ExecutionResult(outcome="env_error", method_used=method, stderr=str(e))
 
     def _run_test_cmd(self, test_cmd: str, baseline_pass_count: int | None, eval_env: dict | None = None) -> ExecutionResult:

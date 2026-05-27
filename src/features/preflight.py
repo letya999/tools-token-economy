@@ -168,6 +168,8 @@ class PreflightChecker:
             ("fastembed", "fastembed", {"simple_rag"}),
             ("jedi", "jedi", {"lsp_symbols"}),
             ("tree_sitter", "tree-sitter", {"tree_sitter"}),
+            # tree_sitter_python ships the pre-compiled Python grammar (separate from the engine)
+            ("tree_sitter_python", "tree-sitter-python", {"tree_sitter"}),
         ]
 
         results = []

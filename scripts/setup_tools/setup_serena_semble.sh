@@ -39,4 +39,15 @@ timeout 5 uvx --from "semble[mcp]" semble mcp "$SEMBLE_TMP" &>/dev/null \
 rm -rf "$SEMBLE_TMP"
 
 echo ""
+echo "=== Semble pre-warm ==="
+# Pre-download semble package so first benchmark run doesn't time out
+if ! uvx --from semble semble --version &>/dev/null 2>&1; then
+    echo "Downloading semble via uvx (first-time install)..."
+    uv tool install semble || uvx --from semble semble --help || true
+fi
+# Mark warmup done
+touch ~/.semble_warmed_up
+uvx --from semble semble --version 2>/dev/null && echo "[OK] semble ready" || echo "[WARN] semble not verified"
+
+echo ""
 echo "Serena/Semble verification complete."

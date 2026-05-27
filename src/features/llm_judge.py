@@ -13,6 +13,8 @@ class JudgeReport(BaseModel):
     task_solved_reasoning: str = ""
     tool_correctness_score: float = 0.0
     tool_correctness_reasoning: str = ""
+    context_quality_score: float = 0.0
+    context_quality_reasoning: str = ""
     judge_model: str = ""
 
 
@@ -36,6 +38,20 @@ class LLMJudge:
         "Note: Common tools like 'write', 'patch', and 'shell' have been filtered out of the list to focus on retrieval strategy."
     )
 
+    _CONTEXT_SYSTEM = (
+        "You are an objective evaluator for a software engineering benchmark.\n"
+        "You will be shown: the task description, and the complete list of file-reading\n"
+        "and search tool calls the agent made (filenames + queries only, not content).\n"
+        'Return ONLY a JSON object: {"score": float, "reasoning": "1-2 sentences"}\n\n'
+        "Scoring rubric (use fuzzy values 0.0/0.25/0.5/0.75/1.0):\n"
+        "1.0 = Agent found exactly the right files/symbols with minimum reads. No irrelevant files.\n"
+        "0.75 = Good retrieval with at most 1 redundant read or 1 missed helper file.\n"
+        "0.5 = Found the target but with >2 irrelevant reads OR missed an important fixture/helper.\n"
+        "0.25 = Read some files but missed the primary source being tested.\n"
+        "0.0 = No reads, or all reads irrelevant, or agent hallucinated without reading codebase.\n\n"
+        "Note: Count only read/search calls (not write/patch/shell). Fewer focused reads = better."
+    )
+
     def __init__(self, judge_model: str | None = None):
         self.judge_model = judge_model or os.getenv("JUDGE_MODEL", "gpt-4.1-mini")
         self.api_key = os.getenv("OPENAI_API_KEY")
@@ -57,6 +73,7 @@ class LLMJudge:
             return JudgeReport(
                 task_solved_reasoning="judge skipped: no API key",
                 tool_correctness_reasoning="judge skipped: no API key",
+                context_quality_reasoning="judge skipped: no API key",
                 judge_model="skipped",
             )
 
@@ -64,12 +81,15 @@ class LLMJudge:
             task_description, patch, tests_passed, tests_total, success, execution_result
         )
         tool_score, tool_reasoning = self._judge_tool_correctness(config_tools, agent_messages)
+        context_score, context_reasoning = self._judge_context_quality(task_description, agent_messages)
 
         return JudgeReport(
             task_solved_score=task_score,
             task_solved_reasoning=task_reasoning,
             tool_correctness_score=tool_score,
             tool_correctness_reasoning=tool_reasoning,
+            context_quality_score=context_score,
+            context_quality_reasoning=context_reasoning,
             judge_model=self.judge_model,
         )
 
@@ -155,4 +175,57 @@ class LLMJudge:
             return float(data.get("score", 0.0)), str(data.get("reasoning", ""))
         except Exception as exc:
             logger.warning("Tool correctness judge call failed: %s", exc)
+            return 0.0, f"judge call failed: {exc}"
+
+    def _judge_context_quality(
+        self,
+        task_description: str,
+        agent_messages: list[dict],
+    ) -> tuple[float, str]:
+        # Filter for retrieval/search tool calls
+        retrieval_calls = []
+        _retrieval_tools = {
+            "read", "read_file", "read_all", "grep", "grep_search", "rg", "ugrep",
+            "glob", "ls", "list_dir", "list_directory", "lsp_symbols", "repo_map",
+            "tree_sitter", "semgrep", "ast_grep", "simple_rag", "semble", "serena"
+        }
+        
+        for msg in agent_messages:
+            if msg.get("role") != "assistant" or not msg.get("tool_calls"):
+                continue
+            for call in msg["tool_calls"]:
+                if isinstance(call, dict):
+                    func = call.get("function", {})
+                    name = func.get("name", "unknown")
+                    args = func.get("arguments", "{}")
+                else:
+                    name = call.function.name
+                    args = call.function.arguments
+                
+                if name in _retrieval_tools:
+                    # Truncate args to keep it concise (filenames/queries usually at start)
+                    retrieval_calls.append({"tool": name, "query_or_file": str(args)[:200]})
+
+        user_message = (
+            f"TASK DESCRIPTION:\n{task_description}\n\n"
+            f"ACTUAL RETRIEVAL TOOL CALLS:\n"
+            f"{json.dumps(retrieval_calls, indent=2)}"
+        )
+        if len(user_message) > 60000:
+             user_message = user_message[:55000] + "\n... [TRUNCATED]"
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.judge_model,
+                messages=[
+                    {"role": "system", "content": self._CONTEXT_SYSTEM},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.0,
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(response.choices[0].message.content)
+            return float(data.get("score", 0.0)), str(data.get("reasoning", ""))
+        except Exception as exc:
+            logger.warning("Context quality judge call failed: %s", exc)
             return 0.0, f"judge call failed: {exc}"

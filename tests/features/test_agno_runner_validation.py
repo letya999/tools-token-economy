@@ -13,6 +13,32 @@ def runner():
     return AgnoRunner(config, tools=[])
 
 
+def test_max_iterations_caps_tool_call_limit():
+    """max_iterations from BenchmarkMeta caps agent's tool_call_limit."""
+    config = AgentConfig(id="test", name="Test", archetype="test", tools=[], max_steps=50)
+    runner = AgnoRunner(config, tools=[], max_iterations=10)
+
+    with patch("src.features.agent_integration.agno_runner.Agent") as mock_agent_cls, \
+         patch("src.features.agent_integration.agno_runner.OpenAIChat"):
+        mock_agent_cls.return_value = MagicMock()
+        runner._build_agent("gpt-4o-mini", [], "/tmp/wt")
+        _, kwargs = mock_agent_cls.call_args
+        assert kwargs["tool_call_limit"] == 10  # min(50, 10) = 10
+
+
+def test_max_iterations_does_not_increase_config_limit():
+    """max_iterations > config.max_steps: config limit wins."""
+    config = AgentConfig(id="test", name="Test", archetype="test", tools=[], max_steps=5)
+    runner = AgnoRunner(config, tools=[], max_iterations=20)
+
+    with patch("src.features.agent_integration.agno_runner.Agent") as mock_agent_cls, \
+         patch("src.features.agent_integration.agno_runner.OpenAIChat"):
+        mock_agent_cls.return_value = MagicMock()
+        runner._build_agent("gpt-4o-mini", [], "/tmp/wt")
+        _, kwargs = mock_agent_cls.call_args
+        assert kwargs["tool_call_limit"] == 5  # min(5, 20) = 5
+
+
 def test_validate_run_no_changes(runner):
     """If git status shows no changed files, validation returns success=False immediately."""
     with patch("subprocess.run") as mock_run:
@@ -43,15 +69,24 @@ def test_validate_run_no_test_files(runner):
         assert patch_lines == 1
 
 
+def _mock_popen(stdout: str, stderr: str, returncode: int):
+    mock_proc = MagicMock()
+    mock_proc.communicate.return_value = (stdout, stderr)
+    mock_proc.returncode = returncode
+    return mock_proc
+
+
 def test_validate_run_test_passed(runner):
     """If test files changed and tests pass, validation returns success=True with count."""
-    with patch("subprocess.run") as mock_run:
-        # Call order: (1) git diff HEAD, (2) git status --porcelain, (3) pytest
+    with patch("subprocess.run") as mock_run, \
+         patch("subprocess.Popen") as mock_popen:
+        # subprocess.run: (1) git diff HEAD, (2) git status --porcelain
         mock_run.side_effect = [
-            MagicMock(stdout="+ def test(): pass\n", returncode=0),  # git diff HEAD
-            MagicMock(stdout="?? tests/test_main.py\n", returncode=0),  # git status --porcelain
-            MagicMock(stdout="2 passed in 0.1s", stderr="", returncode=0),  # pytest
+            MagicMock(stdout="+ def test(): pass\n", returncode=0),
+            MagicMock(stdout="?? tests/test_main.py\n", returncode=0),
         ]
+        # subprocess.Popen: pytest (now uses Popen for timeout handling)
+        mock_popen.return_value = _mock_popen("2 passed in 0.1s", "", 0)
 
         success, tests_passed, tests_failed, patch_lines, *_ = runner._validate_run("/tmp/wt", "pytest")
 
@@ -62,13 +97,13 @@ def test_validate_run_test_passed(runner):
 
 def test_validate_run_test_failed(runner):
     """If test files changed but tests fail, validation returns success=False."""
-    with patch("subprocess.run") as mock_run:
-        # Call order: (1) git diff HEAD, (2) git status --porcelain, (3) pytest
+    with patch("subprocess.run") as mock_run, \
+         patch("subprocess.Popen") as mock_popen:
         mock_run.side_effect = [
-            MagicMock(stdout="+ def test(): assert False\n", returncode=0),  # git diff HEAD
-            MagicMock(stdout="?? tests/test_main.py\n", returncode=0),  # git status --porcelain
-            MagicMock(stdout="1 failed in 0.1s", stderr="", returncode=1),  # pytest
+            MagicMock(stdout="+ def test(): assert False\n", returncode=0),
+            MagicMock(stdout="?? tests/test_main.py\n", returncode=0),
         ]
+        mock_popen.return_value = _mock_popen("1 failed in 0.1s", "", 1)
 
         success, tests_passed, tests_failed, patch_lines, *_ = runner._validate_run("/tmp/wt", "pytest")
 

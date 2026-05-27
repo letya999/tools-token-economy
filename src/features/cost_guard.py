@@ -28,10 +28,20 @@ class CostGuard:
         self.config_stats: dict[str, dict[str, Any]] = {}
 
     def check_suite_budget(self, next_config_id: str):
-        """Raise BudgetExceededError if suite budget is already gone."""
+        """Raise BudgetExceededError if suite budget is already exhausted."""
         if self.total_cost >= self.max_suite_usd:
             _log.error("Suite budget EXCEEDED ($%.2f >= $%.2f). Aborting.", self.total_cost, self.max_suite_usd)
             raise BudgetExceededError(f"Suite budget of ${self.max_suite_usd} exceeded")
+        remaining = self.max_suite_usd - self.total_cost
+        if remaining < self.max_config_usd * 0.5:
+            _log.warning(
+                "Suite budget nearly exhausted ($%.3f remaining < $%.3f per-config limit). "
+                "Skipping config %s.",
+                remaining, self.max_config_usd, next_config_id,
+            )
+            raise BudgetExceededError(
+                f"Insufficient suite budget (${remaining:.3f}) to safely run config '{next_config_id}'"
+            )
 
     def record(self, config_id: str, cost: float, tokens: int) -> dict[str, bool]:
         """Record usage and return exceed flags."""

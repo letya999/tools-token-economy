@@ -23,6 +23,7 @@ class BenchmarkMeta(BaseModel):
     max_cost_usd_suite: float = 5.0
     max_cost_usd_config: float = 0.15
     max_tokens_per_config: int = 500_000
+    max_iterations: int = 15
 
 
 class AgentConfig(BaseModel):
@@ -57,7 +58,9 @@ class RunMetrics(BaseModel):
     tool_correctness_score: float = 0.0
     judge_reasoning_task: str = ""
     judge_reasoning_tools: str = ""
+    judge_reasoning_context: str = ""
     judge_model: str = ""
+    context_quality_score: float = 0.0
 
     @computed_field
     @property

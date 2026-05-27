@@ -42,6 +42,19 @@ def test_check_suite_budget_raises_when_exceeded(guard):
         guard.check_suite_budget("cfg_b")
 
 
+def test_check_suite_budget_raises_when_nearly_exhausted(guard):
+    # Remaining = $1.0 - $0.96 = $0.04, threshold = $0.10 * 0.5 = $0.05 → should raise
+    guard.record("cfg_a", cost=0.96, tokens=10_000)
+    with pytest.raises(BudgetExceededError):
+        guard.check_suite_budget("cfg_b")
+
+
+def test_check_suite_budget_passes_when_enough_remains(guard):
+    # Remaining = $1.0 - $0.90 = $0.10, threshold = $0.05 → $0.10 >= $0.05 → no raise
+    guard.record("cfg_a", cost=0.90, tokens=10_000)
+    guard.check_suite_budget("cfg_b")  # should not raise
+
+
 def test_suite_summary_structure(guard):
     guard.record("cfg_a", cost=0.30, tokens=30_000)
     summary = guard.suite_summary

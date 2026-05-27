@@ -59,6 +59,52 @@ class TestPreflightReport:
 # CLI tool checks
 # ---------------------------------------------------------------------------
 
+class TestPythonPackageChecks:
+    def test_tree_sitter_python_checked_when_tree_sitter_tool_used(self, git_repo):
+        checker = PreflightChecker(
+            repo_path=str(git_repo),
+            configs=[_make_config(["tree_sitter"])],
+            test_cmd="pytest",
+        )
+        results = checker._check_python_packages()
+        names = [r.name for r in results]
+        assert "Python package: tree_sitter_python" in names
+
+    def test_tree_sitter_python_is_critical_when_needed(self, git_repo):
+        checker = PreflightChecker(
+            repo_path=str(git_repo),
+            configs=[_make_config(["tree_sitter"])],
+            test_cmd="pytest",
+        )
+        import unittest.mock as _mock
+        import importlib.util as _ilu
+        original = _ilu.find_spec
+
+        def _find_spec_stub(name):
+            if name == "tree_sitter_python":
+                return None
+            return original(name)
+
+        with _mock.patch("importlib.util.find_spec", side_effect=_find_spec_stub):
+            results = checker._check_python_packages()
+
+        ts_py = next(r for r in results if r.name == "Python package: tree_sitter_python")
+        assert ts_py.level == "critical"
+        assert not ts_py.passed
+
+    def test_tree_sitter_python_is_warning_for_unrelated_tools(self, git_repo):
+        checker = PreflightChecker(
+            repo_path=str(git_repo),
+            configs=[_make_config(["rg", "grep"])],
+            test_cmd="pytest",
+        )
+        results = checker._check_python_packages()
+        ts_py = next((r for r in results if r.name == "Python package: tree_sitter_python"), None)
+        # Package is always checked, but only critical when tree_sitter tool is active
+        assert ts_py is not None
+        assert ts_py.level == "warning"
+
+
 class TestToolCliDeps:
     def test_pure_python_tools_need_no_cli(self, git_repo):
         checker = PreflightChecker(

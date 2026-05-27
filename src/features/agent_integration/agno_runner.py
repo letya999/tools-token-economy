@@ -42,6 +42,7 @@ class AgnoRunner:
         mcp_configs: list[McpServerConfig] | None = None,
         validation_cmd: str | None = None,
         baseline_pass_count: int | None = None,
+        max_iterations: int = 15,
     ):
         self.config = config
         self.tools = tools
@@ -51,6 +52,7 @@ class AgnoRunner:
         self.mcp_configs = mcp_configs or []
         self.validation_cmd = validation_cmd
         self.baseline_pass_count = baseline_pass_count
+        self.max_iterations = max_iterations
         try:
             self._tokenizer = tiktoken.get_encoding("cl100k_base")
         except Exception:
@@ -112,6 +114,7 @@ class AgnoRunner:
         return agno_tools_list
 
     def _build_agent(self, model_id: str, tools: list, worktree_path: str) -> Agent:
+        effective_limit = min(self.config.max_steps, self.max_iterations)
         return Agent(
             model=OpenAIChat(id=model_id, max_tokens=4096),
             tools=tools,
@@ -126,7 +129,7 @@ class AgnoRunner:
                 "Efficiency: Use the `shell` tool's `multi_cmd` parameter to run multiple related commands in a single turn (e.g. `ls` then `cat`).",
             ],
             markdown=False,
-            tool_call_limit=self.config.max_steps,
+            tool_call_limit=effective_limit,
         )
 
     def _validate_run(self, worktree_path: str, test_cmd: str) -> tuple[bool, int, int, int, str, bool]:

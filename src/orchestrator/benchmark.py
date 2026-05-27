@@ -5,6 +5,8 @@ import os
 import re
 import sys
 import time
+import subprocess
+from pathlib import Path
 from typing import Any
 
 from src.core.config_loader import load_benchmark_configs, load_benchmark_meta
@@ -69,6 +71,7 @@ class BenchmarkOrchestrator:
         self.timeout_sec = self.meta.timeout_sec if self.meta else timeout_sec
         self.test_cmd = self.meta.test_cmd if self.meta else _kwargs.get("test_cmd", "uv run pytest")
         self.validation_cmd = self.meta.validation_cmd if self.meta else None
+        self.max_iterations = self.meta.max_iterations if self.meta else 15
         self.aggregator = MetricsAggregator(self.results_dir)
         self.isolation = GitIsolationProvider(self.repo_path, self.worktree_base)
         self.cost_guard = CostGuard(
@@ -81,6 +84,31 @@ class BenchmarkOrchestrator:
 
         logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
         self.logger = logging.getLogger("Orchestrator")
+
+    def _setup_target_repo(self, repo_path: str, test_cmd: str) -> None:
+        """Ensure target repo is installed and importable before benchmark starts."""
+        self.logger.info("Running `uv sync --extra dev` in target repo: %s", repo_path)
+        result = subprocess.run(
+            ["uv", "sync", "--extra", "dev"],
+            cwd=repo_path, capture_output=True, text=True, timeout=300
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Target repo uv sync failed:\n{result.stderr[:2000]}\n"
+                "Fix the target repo before running the benchmark."
+            )
+
+        # Verify Python can at least parse key modules (import errors from missing
+        # env vars are acceptable; syntax errors and missing packages are not)
+        py_files = list(Path(repo_path).glob("**/*.py"))[:20]  # spot check
+        for f in py_files:
+            r = subprocess.run(
+                ["python", "-m", "py_compile", str(f)],
+                cwd=repo_path, capture_output=True, text=True
+            )
+            if r.returncode != 0 and "SyntaxError" in r.stderr:
+                raise RuntimeError(f"Syntax error in target repo {f}:\n{r.stderr}")
+        self.logger.info("Target repo setup verified OK.")
 
     def _run_preflight(self, selected_ids: list[str] | None = None) -> None:
         """Run pre-flight checks; raises PreflightError if any critical check fails."""
@@ -174,6 +202,7 @@ class BenchmarkOrchestrator:
                 run_dir=run_dir,
                 validation_cmd=self.validation_cmd,
                 baseline_pass_count=baseline_pass_count,
+                max_iterations=self.max_iterations,
             )
 
             prefix = build_tool_restriction_prefix(config)
@@ -214,8 +243,10 @@ class BenchmarkOrchestrator:
                 run_metrics = run_metrics.model_copy(update={
                     "task_solved_score": report.task_solved_score,
                     "tool_correctness_score": report.tool_correctness_score,
+                    "context_quality_score": report.context_quality_score,
                     "judge_reasoning_task": report.task_solved_reasoning,
                     "judge_reasoning_tools": report.tool_correctness_reasoning,
+                    "judge_reasoning_context": report.context_quality_reasoning,
                     "judge_model": report.judge_model,
                 })
             except Exception as e:
@@ -261,13 +292,24 @@ class BenchmarkOrchestrator:
     def run_suite(self, task_description: str, config_ids: list[str] | None = None):
         """Runs configurations sequentially. Pass config_ids to run a subset."""
         self._run_preflight(selected_ids=config_ids)
+        if not self.dry_run:
+            self._setup_target_repo(self.repo_path, self.test_cmd)
         self.logger.info("Starting benchmark suite (Dry Run: %s).", self.dry_run)
 
         configs = [c for c in self.configs if c.id in config_ids] if config_ids else self.configs
         if config_ids:
             self.logger.info("Running subset: %s", config_ids)
 
-        baseline_pass_count = self._capture_baseline() if not self.dry_run else 0
+        baseline_pass_count = 0
+        if not self.dry_run:
+            baseline_pass_count = self._capture_baseline()
+            if baseline_pass_count == 0:
+                raise RuntimeError(
+                    "Baseline measurement returned 0 passing tests. "
+                    "Target repo may be misconfigured. Run `uv sync --extra dev` in target repo and retry."
+                )
+        self.logger.info("Baseline: %d tests passing.", baseline_pass_count)
+
         timestamp = time.strftime("%Y%m%d_%H%M%S")
 
         for config in configs:
@@ -326,8 +368,20 @@ class BenchmarkOrchestrator:
 
         self.logger.info("Found %d failed configs: %s", len(failed_config_ids), failed_config_ids)
 
+        if not self.dry_run:
+            self._setup_target_repo(self.repo_path, self.test_cmd)
+
         configs_to_retry = [c for c in self.configs if c.id in failed_config_ids]
-        baseline_pass_count = self._capture_baseline() if not self.dry_run else 0
+        
+        baseline_pass_count = 0
+        if not self.dry_run:
+            baseline_pass_count = self._capture_baseline()
+            if baseline_pass_count == 0:
+                raise RuntimeError(
+                    "Baseline measurement returned 0 passing tests. "
+                    "Target repo may be misconfigured. Run `uv sync --extra dev` in target repo and retry."
+                )
+        self.logger.info("Baseline: %d tests passing.", baseline_pass_count)
 
         for config in configs_to_retry:
             try:

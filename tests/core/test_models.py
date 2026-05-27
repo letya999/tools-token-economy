@@ -1,4 +1,16 @@
-from src.core.models import AgentConfig, RunMetrics
+from src.core.models import AgentConfig, BenchmarkMeta, RunMetrics
+
+
+def test_benchmark_meta_defaults():
+    meta = BenchmarkMeta(repo="myrepo", task="fix bug")
+    assert meta.max_iterations == 15
+    assert meta.max_cost_usd_suite == 5.0
+    assert meta.max_tokens_per_config == 500_000
+
+
+def test_benchmark_meta_custom_iterations():
+    meta = BenchmarkMeta(repo="myrepo", task="fix bug", max_iterations=8)
+    assert meta.max_iterations == 8
 
 
 def test_agent_config_validation():

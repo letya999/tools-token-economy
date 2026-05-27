@@ -37,17 +37,18 @@ class TestLLMJudge(unittest.TestCase):
     def test_judge_parses_task_solved_score(self, mock_openai):
         mock_client = MagicMock()
         mock_openai.return_value = mock_client
-        
-        # Mocking task solved response
+
         mock_response_task = MagicMock()
         mock_response_task.choices[0].message.content = '{"score": 0.85, "reasoning": "Good job"}'
-        
-        # Mocking tool correctness response
         mock_response_tools = MagicMock()
         mock_response_tools.choices[0].message.content = '{"score": 1.0, "reasoning": "Perfect tools"}'
-        
-        mock_client.chat.completions.create.side_effect = [mock_response_task, mock_response_tools]
-        
+        mock_response_context = MagicMock()
+        mock_response_context.choices[0].message.content = '{"score": 0.75, "reasoning": "Good reads"}'
+
+        mock_client.chat.completions.create.side_effect = [
+            mock_response_task, mock_response_tools, mock_response_context
+        ]
+
         judge = LLMJudge()
         report = judge.evaluate(
             self.task_description,
@@ -66,15 +67,18 @@ class TestLLMJudge(unittest.TestCase):
     def test_judge_parses_tool_correctness_score(self, mock_openai):
         mock_client = MagicMock()
         mock_openai.return_value = mock_client
-        
-        # Mocking responses
+
         mock_response_task = MagicMock()
         mock_response_task.choices[0].message.content = '{"score": 1.0, "reasoning": "Solved"}'
         mock_response_tools = MagicMock()
         mock_response_tools.choices[0].message.content = '{"score": 0.5, "reasoning": "Only used rg"}'
-        
-        mock_client.chat.completions.create.side_effect = [mock_response_task, mock_response_tools]
-        
+        mock_response_context = MagicMock()
+        mock_response_context.choices[0].message.content = '{"score": 0.5, "reasoning": "Redundant reads"}'
+
+        mock_client.chat.completions.create.side_effect = [
+            mock_response_task, mock_response_tools, mock_response_context
+        ]
+
         judge = LLMJudge()
         report = judge.evaluate(
             self.task_description,
@@ -87,6 +91,36 @@ class TestLLMJudge(unittest.TestCase):
         )
         self.assertEqual(report.tool_correctness_score, 0.5)
         self.assertEqual(report.tool_correctness_reasoning, "Only used rg")
+
+    @patch("src.features.llm_judge.OpenAI")
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "fake-key"})
+    def test_judge_parses_context_quality_score(self, mock_openai):
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        mock_response_task = MagicMock()
+        mock_response_task.choices[0].message.content = '{"score": 1.0, "reasoning": "Solved"}'
+        mock_response_tools = MagicMock()
+        mock_response_tools.choices[0].message.content = '{"score": 1.0, "reasoning": "All tools used"}'
+        mock_response_context = MagicMock()
+        mock_response_context.choices[0].message.content = '{"score": 0.75, "reasoning": "One redundant read"}'
+
+        mock_client.chat.completions.create.side_effect = [
+            mock_response_task, mock_response_tools, mock_response_context
+        ]
+
+        judge = LLMJudge()
+        report = judge.evaluate(
+            self.task_description,
+            self.agent_messages,
+            self.patch_content,
+            self.config_tools,
+            tests_passed=1,
+            tests_total=1,
+            success=True
+        )
+        self.assertEqual(report.context_quality_score, 0.75)
+        self.assertEqual(report.context_quality_reasoning, "One redundant read")
 
     @patch("src.features.llm_judge.OpenAI")
     @patch.dict(os.environ, {"OPENAI_API_KEY": "fake-key"})

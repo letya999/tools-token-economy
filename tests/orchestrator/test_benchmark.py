@@ -187,20 +187,22 @@ def test_orchestrator_passes_test_cmd_to_runner(minimal_configs_yaml, mock_repo,
             dry_run=False,
             test_cmd="uv run pytest --custom",
         )
-    
+
     fake_wt = str(tmp_path / "wt")
     os.makedirs(fake_wt, exist_ok=True)
     orch.isolation.setup = MagicMock(return_value=fake_wt)
     orch.isolation.teardown = MagicMock()
 
     with patch.object(orch, "_run_preflight"), \
+         patch.object(orch, "_setup_target_repo"), \
+         patch.object(orch, "_capture_baseline", return_value=5), \
          patch("src.orchestrator.benchmark.AgnoRunner") as mock_runner_cls:
         mock_runner = mock_runner_cls.return_value
         mock_runner.run = MagicMock(return_value=_mock_run_metrics())
 
         with patch.object(orch, "_get_tools_for_config", return_value=[]):
             orch.run_suite("task")
-        
+
         # Verify runner.run was called with test_cmd
         _, called_kwargs = mock_runner.run.call_args
         assert called_kwargs["test_cmd"] == "uv run pytest --custom"
