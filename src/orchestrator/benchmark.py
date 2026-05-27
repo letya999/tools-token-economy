@@ -103,7 +103,7 @@ class BenchmarkOrchestrator:
         py_files = list(Path(repo_path).glob("**/*.py"))[:20]  # spot check
         for f in py_files:
             r = subprocess.run(
-                ["python", "-m", "py_compile", str(f)],
+                [sys.executable, "-m", "py_compile", str(f)],
                 cwd=repo_path, capture_output=True, text=True
             )
             if r.returncode != 0 and "SyntaxError" in r.stderr:
