@@ -10,9 +10,11 @@ Priority:
 3. python -m py_compile on changed .py files - syntax check fallback
 4. not_verified - judge decides
 """
+import hashlib
 import logging
 import os
 import re
+import signal
 import subprocess
 from dataclasses import dataclass
 
@@ -162,13 +164,18 @@ class ExecutionValidator:
         new_tokens = ["uv", "run", "--project", self.worktree_path] + tokens[2:]
         return shlex.join(new_tokens)
 
+    def _eval_venv_path(self) -> str:
+        # Place eval venv on native Linux fs (not NTFS /mnt/c/) to avoid uv hardlink failures.
+        run_hash = hashlib.md5(self.worktree_path.encode()).hexdigest()[:12]
+        return os.path.expanduser(f"~/.eval_venvs/{run_hash}")
+
     def _run_cmd(self, cmd: str, method: str, eval_env: dict | None = None) -> ExecutionResult:
         # Isolate uv from the benchmark's own activated venv so it manages its own env.
         env = os.environ.copy()
         env.pop("UV_PROJECT_ENVIRONMENT", None)
         env.pop("VIRTUAL_ENV", None)
         env.pop("VIRTUAL_ENV_PROMPT", None)
-        venv_path = os.path.join(self.worktree_path, ".eval_venv")
+        venv_path = self._eval_venv_path()
         env["UV_PROJECT_ENVIRONMENT"] = venv_path
         if eval_env:
             env.update(eval_env)
@@ -178,11 +185,28 @@ class ExecutionValidator:
         _log.debug("Validation cmd: %s", cmd)
 
         try:
-            proc = subprocess.run(
+            # Use Popen + setsid so the entire process group (shell + uv + pytest children)
+            # is killed on timeout. subprocess.run(shell=True, timeout=X) only kills the
+            # shell, leaving uv/pytest alive holding pipe fds — Python then hangs forever
+            # waiting for EOF on those pipes.
+            proc = subprocess.Popen(
                 cmd, shell=True, cwd=self.worktree_path,
-                capture_output=True, text=True, timeout=self.timeout_sec, env=env
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, env=env,
+                preexec_fn=os.setsid,
             )
-            stdout, stderr = proc.stdout, proc.stderr
+            try:
+                stdout, stderr = proc.communicate(timeout=self.timeout_sec)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.wait()
+                return ExecutionResult(
+                    outcome="env_error", method_used=method,
+                    stderr=f"Validation timed out ({self.timeout_sec}s)",
+                )
             exit_code = proc.returncode
 
             if exit_code == 0:
@@ -192,8 +216,6 @@ class ExecutionValidator:
                 return ExecutionResult(outcome="env_error", method_used=method, stdout=stdout, stderr=stderr, exit_code=exit_code)
 
             return ExecutionResult(outcome="failed", method_used=method, stdout=stdout, stderr=stderr, exit_code=exit_code)
-        except subprocess.TimeoutExpired:
-            return ExecutionResult(outcome="failed", method_used=method, stderr=f"Validation timed out ({self.timeout_sec}s)")
         except Exception as e:
             return ExecutionResult(outcome="env_error", method_used=method, stderr=str(e))
 
