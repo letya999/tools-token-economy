@@ -1,0 +1,28 @@
+difficulty: medium
+name: "Execution Timeout - Jira Sync Jobs"
+description: |
+  Implement a system-wide execution timeout for all background data processing
+  operations (specifically Jira synchronization and metrics recalculation jobs).
+
+  1. Identify the primary service responsible for dispatching these jobs
+     to the external orchestrator.
+  2. Modify this service to enforce a mandatory 1-hour (3600 seconds)
+     timeout. This timeout must be passed as a 'timeout' tag within
+     the execution parameters sent to the orchestrator.
+  3. Locate all call sites (API endpoints and internal handlers) that
+     initiate these background jobs and update them to comply with the
+     new signature/logic.
+  4. Ensure that all unit tests related to job triggering are updated
+     to reflect this change and continue to pass.
+
+  You MUST use your retrieval tools to discover the relevant components.
+  Finalize by calling write/patch to save changes and output: TASK_COMPLETE.
+test_cmd: "uv run --extra dev pytest tests/unit/ -q"
+timeout_sec: 1200
+target_file: "tests/unit/test_dagster_client.py"
+required_files:
+  - "app/services/dagster_client.py"
+  - "app/api/integrations.py"
+  - "tests/unit/test_dagster_client.py"
+success_criteria:
+  - "All new tests pass"

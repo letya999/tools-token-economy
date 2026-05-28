@@ -1,5 +1,5 @@
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel, computed_field
 
@@ -9,9 +9,39 @@ class McpServerConfig:
     tool_name: str
     command: str
     args_template: list[str]
+    warmup_call: str | None = None
+    warmup_args: dict = field(default_factory=dict)
 
     def resolve_args(self, worktree_path: str) -> list[str]:
         return [a.replace("{path}", worktree_path) for a in self.args_template]
+
+
+class ProviderConfig(BaseModel):
+    provider: str = "openai"
+    model: str = "openai/gpt-4.1-mini"
+    api_base: str = ""
+    max_steps: int = 50
+    temperature: float = 0.0
+
+
+class TaskConfig(BaseModel):
+    difficulty: str = "medium"
+    name: str = ""
+    description: str = ""
+    test_cmd: str = "uv run --extra dev pytest tests/unit/ -q"
+    timeout_sec: int = 1200
+    target_file: str | None = None
+    required_files: list[str] = []
+    success_criteria: list[str] = []
+
+
+class CodebaseConfig(BaseModel):
+    name: str = ""
+    github_url: str = ""
+    branch: str = "main"
+    commit: str = "HEAD"
+    local_path: str = ""
+    install_cmd: str = "uv sync --extra dev"
 
 
 class BenchmarkMeta(BaseModel):
@@ -19,6 +49,9 @@ class BenchmarkMeta(BaseModel):
     task: str
     test_cmd: str = "pytest"
     validation_cmd: str | None = None
+    target_file: str | None = None
+    target_test: str | None = None
+    required_files: list[str] = []
     timeout_sec: int = 600
     max_cost_usd_suite: float = 5.0
     max_cost_usd_config: float = 0.15
@@ -56,16 +89,37 @@ class RunMetrics(BaseModel):
     token_exceeded: bool = False
     task_solved_score: float = 0.0
     tool_correctness_score: float = 0.0
+    correctness_score: float = 0.0
+    minimality_score: float = 0.0
+    pattern_adherence_score: float = 0.0
+    tool_sequence_score: float = 0.0
     judge_reasoning_task: str = ""
     judge_reasoning_tools: str = ""
     judge_reasoning_context: str = ""
+    judge_reasoning_correctness: str = ""
+    judge_reasoning_minimality: str = ""
+    judge_reasoning_pattern: str = ""
+    judge_reasoning_tool_sequence: str = ""
     judge_model: str = ""
     context_quality_score: float = 0.0
+    retrieval_precision: float = 0.0
+    retrieval_recall: float = 0.0
+    agent_cycles: int = 0
+    time_to_target: int = 0
+    context_waste_ratio: float = 0.0
+    warmup_sec: float = 0.0
 
     @computed_field
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens + self.tool_tokens
+
+    @computed_field
+    @property
+    def avg_tokens_per_tool(self) -> float:
+        if self.tool_calls == 0:
+            return 0.0
+        return self.tool_tokens / self.tool_calls
 
     @computed_field
     @property
@@ -100,8 +154,15 @@ class RunMetrics(BaseModel):
     def success_per_token(self) -> float:
         if self.total_tokens == 0:
             return 0.0
-        # Scale to "successes per 1M tokens" for better readability (F-016)
-        return 1_000_000.0 / self.total_tokens if self.success else 0.0
+
+        # Gradual SPT: Use task_solved_score (0.0 to 1.0) to reward partial success.
+        # Fallback to binary 'success' if judge failed to score but tests passed.
+        base_score = self.task_solved_score
+        if base_score == 0.0 and self.success:
+            base_score = 1.0
+
+        # Scale to "successes per 1M tokens"
+        return (base_score * 1_000_000.0) / self.total_tokens
 
 class EvalResult(BaseModel):
     run_id: str

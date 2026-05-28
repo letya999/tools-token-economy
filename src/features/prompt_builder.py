@@ -19,6 +19,7 @@ def build_tool_restriction_prefix(config: AgentConfig) -> str:
         lines.append(f"Retrieval tools available: {', '.join(retrieval_tools)}")
     if write_tools:
         lines.append(f"Write tools (MANDATORY - use to save changes): {', '.join(write_tools)}")
+
     lines += [
         "Use ONLY the listed retrieval strategies. Avoid alternatives not in this list.",
         "[END CONFIG]\n",

@@ -1,0 +1,117 @@
+# Benchmark evaluation weights
+# All weight sections must sum to 1.0
+# Loaded by dashboard_builder.py; edit here to change ranking without code changes.
+
+# ── Eval judge composite (Table 3) ──────────────────────────────────────────
+# Weighted geometric mean of the 7 LLM-judge dimensions.
+# Reasoning for ordering:
+#   task_solved   - primary signal: did the agent accomplish the goal?
+#   correctness   - is the produced code actually correct and safe?
+#   tool_correct  - did it use the right retrieval tools? (core of this benchmark)
+#   context_qual  - was gathered context relevant (precision over recall)?
+#   minimality    - no unnecessary changes / minimal blast radius
+#   pattern_adh   - follows project conventions (less critical than correctness)
+#   tool_sequence - logical ordering of tool calls (correlated with tool_correct)
+eval_weights:
+  task_solved_score:       0.35  # Ground truth functionality
+  correctness_score:       0.20  # Code executes without side effects
+  context_quality_score:   0.15  # Did they over-read?
+  minimality_score:        0.10  # Surgical edits vs rewriting files
+  tool_correctness_score:  0.10  # Selected the right tool
+  pattern_adherence_score: 0.05  # Restored: Follows project conventions
+  tool_sequence_score:     0.05  # Restored: Logical ordering of operations
+
+# ── All-metrics composite (Table 4) ─────────────────────────────────────────
+# Weighted geometric mean across ALL RunMetrics fields, normalized to [0,1].
+# direction: "higher" = higher raw value is better (used as-is)
+#            "lower"  = lower raw value is better (inverted: min/val or 1/(1+val))
+#
+# Budget allocation rationale:
+#   60% quality (eval scores)              — task outcome dominates
+#   8.5% retrieval quality (prec/recall)   — core hypothesis
+#   12.5% efficiency (tokens, cost, calls) — production cost matters
+#   8% reliability (errors)                — stability signal
+#   11% advanced context/agent metrics     — depth of analysis
+all_metrics_weights:
+
+  # Eval judge scores (0-1, higher is better) — 60% total
+  task_solved_score:
+    weight: 0.180
+    direction: higher
+    description: Agent fulfilled the user request
+  correctness_score:
+    weight: 0.120
+    direction: higher
+    description: Code is technically correct and bug-free
+  tool_correctness_score:
+    weight: 0.090
+    direction: higher
+    description: Tools used with correct args in correct context
+  context_quality_score:
+    weight: 0.090
+    direction: higher
+    description: Gathered context was relevant and sufficient
+  minimality_score:
+    weight: 0.060
+    direction: higher
+    description: No unnecessary changes or tool calls
+  pattern_adherence_score:
+    weight: 0.030
+    direction: higher
+    description: Followed project conventions and style
+  tool_sequence_score:
+    weight: 0.030
+    direction: higher
+    description: Tool call sequence was logical and efficient
+
+  # Retrieval quality (0-1, higher is better) — 8.5% total
+  retrieval_precision:
+    weight: 0.050
+    direction: higher
+    description: Fraction of read files that were actually needed
+  retrieval_recall:
+    weight: 0.035
+    direction: higher
+    description: Fraction of needed files that were actually read
+
+  # Token and cost efficiency (lower is better) — 12.5% total
+  total_tokens:
+    weight: 0.045
+    direction: lower
+    description: Total tokens consumed (input + output + tool)
+  cost_usd:
+    weight: 0.040
+    direction: lower
+    description: API cost in USD
+  duration_sec:
+    weight: 0.020
+    direction: lower
+    description: Wall-clock time to complete the task
+  model_calls:
+    weight: 0.020
+    direction: lower
+    description: Number of LLM API calls made
+
+  # Reliability (lower is better) — 8% total
+  errors:
+    weight: 0.040
+    direction: lower
+    description: Runtime errors encountered during execution
+  tool_errors:
+    weight: 0.040
+    direction: lower
+    description: Tool call failures (wrong args, timeouts, etc.)
+
+  # Advanced Efficiency/Precision (New in V2) - 11% total
+  avg_tokens_per_tool:
+    weight: 0.040
+    direction: lower
+    description: Token weight per tool response (lower is more efficient)
+  time_to_target:
+    weight: 0.030
+    direction: lower
+    description: Number of cycles before first required file was read
+  context_waste_ratio:
+    weight: 0.040
+    direction: lower
+    description: Fraction of read tokens that were NOT from required files

@@ -1,0 +1,19 @@
+difficulty: hard
+name: "Implement full OAuth2 PKCE flow"
+description: |
+  Implement a complete OAuth2 PKCE (Proof Key for Code Exchange) flow for
+  Google authentication. This requires:
+  1. Generating and storing a code_verifier and code_challenge
+  2. Modifying the authorization URL to include code_challenge and method
+  3. Implementing the token exchange with code_verifier
+  4. Adding comprehensive unit tests for all new code paths
+  Use your retrieval tools to understand the existing OAuth implementation first.
+  Finalize by calling write/patch to save changes and output: TASK_COMPLETE.
+test_cmd: "uv run --extra dev pytest tests/unit/ -q"
+timeout_sec: 1800
+target_file: "src/api/google_oauth.py"
+required_files:
+  - "src/api/google_oauth.py"
+  - "tests/unit/test_api_google_oauth.py"
+success_criteria:
+  - "PKCE flow tests pass"

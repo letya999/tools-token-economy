@@ -1,0 +1,5 @@
+provider: openai
+model: openai/gpt-4.1-mini
+api_base: ""
+max_steps: 50
+temperature: 0.0

@@ -1,0 +1,6 @@
+name: process_metrics_platform_v2
+github_url: "https://github.com/letya999/process_metrics_platform_v2"
+branch: main
+commit: HEAD
+local_path: 'C:\Users\User\a_projects\process_metrics_platform_v2'
+install_cmd: "uv sync --extra dev"

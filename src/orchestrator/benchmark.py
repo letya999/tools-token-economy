@@ -3,23 +3,31 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import time
-import subprocess
 from pathlib import Path
 from typing import Any
 
-from src.core.config_loader import load_benchmark_configs, load_benchmark_meta
-from src.core.models import EvalResult, McpServerConfig, RunMetrics
-from src.features.tool_registry.registry import ToolRegistry
-from src.features.execution_validator import ExecutionValidator
+from src.core.models import (
+    AgentConfig,
+    CodebaseConfig,
+    EvalResult,
+    McpServerConfig,
+    ProviderConfig,
+    RunMetrics,
+    TaskConfig,
+)
 from src.features.agent_integration.agno_runner import AgnoRunner
-from src.features.cost_guard import CostGuard, BudgetExceededError
-from src.features.isolation import GitIsolationProvider
-from src.features.llm_judge import LLMJudge
+from src.features.cost_guard import BudgetExceededError, CostGuard
+from src.features.dashboard_builder import find_last_full_run_timestamp, generate_dashboard
+from src.features.execution_validator import ExecutionValidator
+from src.features.isolation import DirectCopyIsolationProvider, GitIsolationProvider
+from src.features.llm_judge import LLMJudge, compute_retrieval_metrics
 from src.features.metrics_aggregator import MetricsAggregator
 from src.features.preflight import PreflightChecker
 from src.features.prompt_builder import build_tool_restriction_prefix
+from src.features.tool_registry.registry import ToolRegistry
 
 
 def _to_platform_path(path: str) -> str:
@@ -32,6 +40,12 @@ def _to_platform_path(path: str) -> str:
         rest = m.group(2).lstrip("/")
         return f"/mnt/{drive}/{rest}"
     return path
+
+
+def _make_isolation_provider(repo_path: str, worktree_base: str):
+    if sys.platform != "win32" and repo_path.startswith("/mnt/"):
+        return DirectCopyIsolationProvider(repo_path, "/tmp/benchmark_runs")
+    return GitIsolationProvider(repo_path, worktree_base)
 
 
 class BenchmarkOrchestrator:
@@ -54,30 +68,37 @@ class BenchmarkOrchestrator:
 
     def __init__(
         self,
-        repo_path: str,
-        configs_path: str,
+        provider_config: ProviderConfig,
+        tools_configs: list[AgentConfig],
+        task_config: TaskConfig,
+        codebase_config: CodebaseConfig,
+        weights_config: dict,
         results_dir: str,
         worktree_base: str = "worktrees",
         dry_run: bool = False,
-        timeout_sec: int = 600,
         **_kwargs,
     ):
-        self.repo_path = os.path.abspath(_to_platform_path(repo_path))
-        self.meta = load_benchmark_meta(configs_path)
-        self.configs = load_benchmark_configs(configs_path)
+        self.provider_config = provider_config
+        self.tools_configs = tools_configs
+        self.task_config = task_config
+        self.codebase_config = codebase_config
+        self.weights_config = weights_config
+        
+        self.repo_path = os.path.abspath(_to_platform_path(self.codebase_config.local_path) or self.codebase_config.github_url)
         self.results_dir = os.path.abspath(results_dir)
         self.worktree_base = os.path.abspath(_to_platform_path(worktree_base))
         self.dry_run = dry_run
-        self.timeout_sec = self.meta.timeout_sec if self.meta else timeout_sec
-        self.test_cmd = self.meta.test_cmd if self.meta else _kwargs.get("test_cmd", "uv run pytest")
-        self.validation_cmd = self.meta.validation_cmd if self.meta else None
-        self.max_iterations = self.meta.max_iterations if self.meta else 15
+        self.timeout_sec = self.task_config.timeout_sec
+        self.test_cmd = self.task_config.test_cmd
+        self.validation_cmd = None
+        self.max_iterations = self.provider_config.max_steps
+        self.required_files = self.task_config.required_files
         self.aggregator = MetricsAggregator(self.results_dir)
-        self.isolation = GitIsolationProvider(self.repo_path, self.worktree_base)
+        self.isolation = _make_isolation_provider(self.repo_path, self.worktree_base)
         self.cost_guard = CostGuard(
-            max_suite_usd=_kwargs.get("max_suite_usd", self.meta.max_cost_usd_suite if self.meta else 5.0),
-            max_config_usd=_kwargs.get("max_config_usd", self.meta.max_cost_usd_config if self.meta else 0.15),
-            max_tokens_per_config=_kwargs.get("max_tokens_per_config", self.meta.max_tokens_per_config if self.meta else 500_000),
+            max_suite_usd=_kwargs.get("max_suite_usd", 5.0),
+            max_config_usd=_kwargs.get("max_config_usd", 0.15),
+            max_tokens_per_config=_kwargs.get("max_tokens_per_config", 500_000),
         )
 
         os.makedirs(self.worktree_base, exist_ok=True)
@@ -114,10 +135,13 @@ class BenchmarkOrchestrator:
         """Run pre-flight checks; raises PreflightError if any critical check fails."""
         checker = PreflightChecker(
             repo_path=self.repo_path,
-            configs=self.configs,
+            configs=self.tools_configs,
             test_cmd=self.test_cmd,
             dry_run=self.dry_run,
             selected_ids=selected_ids,
+            target_file=self.task_config.target_file,
+            target_test=self.task_config.target_file,
+            required_files=self.required_files,
         )
         checker.run()
 
@@ -203,6 +227,7 @@ class BenchmarkOrchestrator:
                 validation_cmd=self.validation_cmd,
                 baseline_pass_count=baseline_pass_count,
                 max_iterations=self.max_iterations,
+                required_files=self.required_files,
             )
 
             prefix = build_tool_restriction_prefix(config)
@@ -217,8 +242,8 @@ class BenchmarkOrchestrator:
             })
 
             # LLM Judge Evaluation
+            messages_data: list[dict] = []
             try:
-                messages_data = []
                 if os.path.exists(log_path):
                     with open(log_path, encoding="utf-8") as f:
                         messages_data = json.load(f)
@@ -244,13 +269,33 @@ class BenchmarkOrchestrator:
                     "task_solved_score": report.task_solved_score,
                     "tool_correctness_score": report.tool_correctness_score,
                     "context_quality_score": report.context_quality_score,
+                    "correctness_score": report.correctness_score,
+                    "minimality_score": report.minimality_score,
+                    "pattern_adherence_score": report.pattern_adherence_score,
+                    "tool_sequence_score": report.tool_sequence_score,
                     "judge_reasoning_task": report.task_solved_reasoning,
                     "judge_reasoning_tools": report.tool_correctness_reasoning,
                     "judge_reasoning_context": report.context_quality_reasoning,
+                    "judge_reasoning_correctness": report.correctness_reasoning,
+                    "judge_reasoning_minimality": report.minimality_reasoning,
+                    "judge_reasoning_pattern": report.pattern_adherence_reasoning,
+                    "judge_reasoning_tool_sequence": report.tool_sequence_reasoning,
                     "judge_model": report.judge_model,
                 })
             except Exception as e:
                 self.logger.warning("LLM Judge failed for config %s: %s", config.id, e)
+
+            # Retrieval precision/recall (computed, not judge-based)
+            required = self.required_files
+            if required and messages_data:
+                try:
+                    precision, recall = compute_retrieval_metrics(messages_data, required)
+                    run_metrics = run_metrics.model_copy(update={
+                        "retrieval_precision": precision,
+                        "retrieval_recall": recall,
+                    })
+                except Exception as e:
+                    self.logger.warning("Retrieval metrics failed for %s: %s", config.id, e)
 
             final_result = EvalResult(
                 run_id=run_id,
@@ -289,14 +334,14 @@ class BenchmarkOrchestrator:
             if worktree_path:
                 self.isolation.teardown(run_id)
 
-    def run_suite(self, task_description: str, config_ids: list[str] | None = None):
+    def run_suite(self, config_ids: list[str] | None = None):
         """Runs configurations sequentially. Pass config_ids to run a subset."""
         self._run_preflight(selected_ids=config_ids)
         if not self.dry_run:
             self._setup_target_repo(self.repo_path, self.test_cmd)
         self.logger.info("Starting benchmark suite (Dry Run: %s).", self.dry_run)
 
-        configs = [c for c in self.configs if c.id in config_ids] if config_ids else self.configs
+        configs = [c for c in self.tools_configs if c.id in config_ids] if config_ids else self.tools_configs
         if config_ids:
             self.logger.info("Running subset: %s", config_ids)
 
@@ -320,13 +365,26 @@ class BenchmarkOrchestrator:
                 break
 
             self.logger.info("Running config: %s (%s)", config.id, config.name)
-            self._run_single_config(config, f"run_{timestamp}_{config.id}", task_description, baseline_pass_count)
+            self._run_single_config(config, f"run_{timestamp}_{config.id}", self.task_config.description, baseline_pass_count)
 
         self.logger.info("Benchmark suite completed.")
         rankings = self.aggregator.generate_rankings()
         self.logger.info("Rankings generated:\n%s", rankings)
 
-    def run_failed_configs(self, task_description: str, run_timestamp: str | None = None, config_ids: list[str] | None = None):
+        # Generate HTML Dashboard
+        try:
+            total_configs = len(self.tools_configs)
+            find_last_full_run_timestamp(self.results_dir, total_configs)
+
+            # If this run wasn't full, or we want to reflect it's an update
+            # The plan says use current run_timestamp as filename
+            out_path = os.path.join(self.results_dir, f"dashboard_{timestamp}.html")
+            generate_dashboard(self.results_dir, out_path)
+            self.logger.info("Dashboard generated: %s", out_path)
+        except Exception as e:
+            self.logger.warning("Failed to generate dashboard: %s", e)
+
+    def run_failed_configs(self, run_timestamp: str | None = None, config_ids: list[str] | None = None):
         """Re-runs only configs that previously failed in a given benchmark run."""
         self._run_preflight()
 
@@ -371,8 +429,8 @@ class BenchmarkOrchestrator:
         if not self.dry_run:
             self._setup_target_repo(self.repo_path, self.test_cmd)
 
-        configs_to_retry = [c for c in self.configs if c.id in failed_config_ids]
-        
+        configs_to_retry = [c for c in self.tools_configs if c.id in failed_config_ids]
+
         baseline_pass_count = 0
         if not self.dry_run:
             baseline_pass_count = self._capture_baseline()
@@ -391,8 +449,16 @@ class BenchmarkOrchestrator:
                 break
 
             self.logger.info("Retrying config: %s (%s)", config.id, config.name)
-            self._run_single_config(config, f"run_{run_timestamp}_{config.id}", task_description, baseline_pass_count)
+            self._run_single_config(config, f"run_{run_timestamp}_{config.id}", self.task_config.description, baseline_pass_count)
 
         self.logger.info("Retry run complete.")
         rankings = self.aggregator.generate_rankings()
         self.logger.info("Updated rankings:\n%s", rankings)
+
+        # Generate HTML Dashboard (updated with retries)
+        try:
+            out_path = os.path.join(self.results_dir, f"dashboard_{run_timestamp}.html")
+            generate_dashboard(self.results_dir, out_path)
+            self.logger.info("Updated dashboard generated: %s", out_path)
+        except Exception as e:
+            self.logger.warning("Failed to generate dashboard: %s", e)

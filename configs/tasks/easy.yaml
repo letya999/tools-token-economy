@@ -1,0 +1,14 @@
+difficulty: easy
+name: "Add health check endpoint"
+description: |
+  Add a /health endpoint to the API that returns {"status": "ok"}.
+  Use your retrieval tools to find where existing endpoints are defined,
+  then add the new endpoint following the same pattern.
+  Finalize by calling write/patch to save changes and output: TASK_COMPLETE.
+test_cmd: "uv run --extra dev pytest tests/unit/ -q"
+timeout_sec: 600
+target_file: "src/api/health.py"
+required_files:
+  - "src/api/health.py"
+success_criteria:
+  - "Health endpoint returns 200"
