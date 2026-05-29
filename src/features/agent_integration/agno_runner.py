@@ -336,9 +336,11 @@ class AgnoRunner:
             if hasattr(response, "get_content_as_string")
             else (str(response.content) if response.content else "")
         )
-        if metrics_data["input_tokens"] == 0:
+        # Only use fallback token counts when telemetry is healthy — don't overwrite
+        # the intentional zeros set by the PHANTOM TOKENS handler above.
+        if metrics_data["input_tokens"] == 0 and metrics_data.get("execution_result") != "telemetry_corrupt":
             metrics_data["input_tokens"] = self._count_tokens(task_description)
-        if metrics_data["output_tokens"] == 0:
+        if metrics_data["output_tokens"] == 0 and metrics_data.get("execution_result") != "telemetry_corrupt":
             metrics_data["output_tokens"] = self._count_tokens(content_str)
 
         _read_tool_names = {"read", "read_all", "glob", "tree_sitter", "repo_map", "simple_rag", "lsp_symbols",
