@@ -136,9 +136,10 @@ class AgnoRunner:
         Must raise InputCheckError — agno's execute_pre_hooks re-raises only
         InputCheckError/OutputCheckError; any other Exception is swallowed silently.
         """
-        # At 15 model calls, worst-case observed config (claude_code_like) stays
-        # at ~15/23 * $0.54 = $0.35, safely under the $0.40 per-config budget.
-        MAX_MODEL_CALLS = 15
+        # At 30 model calls, configs that naturally finish in 14-23 calls complete
+        # fully without truncation. claude_code_like (worst case: 23 calls, $0.54)
+        # still finishes before the limit; only runaway configs beyond 30 are cut.
+        MAX_MODEL_CALLS = 30
         call_count = [0]
 
         pricing = {
