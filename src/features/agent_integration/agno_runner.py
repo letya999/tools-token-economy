@@ -123,24 +123,31 @@ class AgnoRunner:
         return agno_tools_list
 
     def _build_budget_pre_hook(self, max_cost_usd: float = 0.50):
-        """Returns a pre_hook that enforces a hard model-call limit per run.
+        """Returns a pre_hook that enforces hard limits on model-call count and budget.
 
-        Two guards:
-        1. Hard step limit (primary) — reliable, no estimation needed. Fires after
-           MAX_MODEL_CALLS model calls regardless of cost. Prevents context explosion
-           on configs that keep calling with growing context (e.g. claude_code_like).
-        2. Chars/4 cost estimate (secondary) — catches cases where a few calls are
-           very expensive. Note: run_context.messages does not include the system
-           prompt, so this guard underestimates; the hard limit is the real gate.
+        Three guards:
+        1. Hard step limit (primary) — fires after MAX_MODEL_CALLS regardless of cost.
+        2. Accumulated cost (secondary) — accumulates per-call estimates across all
+           calls; corrects for run_context.messages excluding system prompt (~20x
+           underestimate empirically for gpt-4.1-mini). Catches read-loop configs
+           that drive up total spend through many calls with growing context.
+        3. Per-call context size (tertiary) — catches single-call context explosion
+           (e.g. agent reads a huge file on one turn).
 
         Must raise InputCheckError — agno's execute_pre_hooks re-raises only
         InputCheckError/OutputCheckError; any other Exception is swallowed silently.
         """
-        # At 30 model calls, configs that naturally finish in 14-23 calls complete
-        # fully without truncation. claude_code_like (worst case: 23 calls, $0.54)
-        # still finishes before the limit; only runaway configs beyond 30 are cut.
         MAX_MODEL_CALLS = 30
+        # run_context.messages excludes the system prompt (tool schemas + instructions).
+        # Empirically this causes ~20x underestimation of true billing tokens for
+        # gpt-4.1-mini configs. Multiply accumulated estimate by this factor before
+        # comparing to max_cost_usd.
+        UNDERESTIMATE_CORRECTION = 20
+        # If a single call's message context exceeds this, context is exploding.
+        MAX_PER_CALL_CHARS = 400_000
+
         call_count = [0]
+        accumulated_estimated_cost = [0.0]
 
         pricing = {
             "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
@@ -161,8 +168,6 @@ class AgnoRunner:
                     f"Hard model-call limit of {MAX_MODEL_CALLS} exceeded — aborting to stay within budget"
                 )
 
-            # Guard 2: chars/4 estimate from conversation messages (underestimates
-            # because system prompt is not in run_context.messages)
             run_context = kwargs.get('run_context')
             if run_context is None:
                 return
@@ -186,13 +191,33 @@ class AgnoRunner:
                 for tc in (getattr(m, 'tool_calls', None) or []):
                     total_chars += len(str(tc))
 
+            # Guard 2: accumulated cost across all calls (with correction factor).
+            # Accumulating per-call estimates captures the triangular billing growth
+            # that results from each call paying for the full accumulated context.
             estimated_tokens = total_chars // 4
-            estimated_cost = (estimated_tokens / 1_000_000) * p["input"]
-            if estimated_cost > max_cost_usd:
-                _log.warning("Budget pre-hook: estimated cost $%.4f exceeds limit $%.2f", estimated_cost, max_cost_usd)
+            this_call_cost = (estimated_tokens / 1_000_000) * p["input"]
+            accumulated_estimated_cost[0] += this_call_cost
+            corrected_accumulated = accumulated_estimated_cost[0] * UNDERESTIMATE_CORRECTION
+            if corrected_accumulated > max_cost_usd:
+                _log.warning(
+                    "Budget pre-hook: accumulated corrected cost $%.4f exceeds limit $%.2f "
+                    "(raw accumulated $%.6f, call %d)",
+                    corrected_accumulated, max_cost_usd, accumulated_estimated_cost[0], call_count[0],
+                )
                 raise InputCheckError(
-                    f"Pre-hook aborted: estimated input cost ${estimated_cost:.4f} "
+                    f"Pre-hook aborted: accumulated estimated cost ${corrected_accumulated:.4f} "
                     f"exceeds per-config limit ${max_cost_usd:.2f}"
+                )
+
+            # Guard 3: per-call context size (400KB ≈ 100K tokens per single call).
+            if total_chars > MAX_PER_CALL_CHARS:
+                _log.warning(
+                    "Budget pre-hook: per-call context %d chars exceeds limit %d",
+                    total_chars, MAX_PER_CALL_CHARS,
+                )
+                raise InputCheckError(
+                    f"Pre-hook aborted: per-call context {total_chars} chars "
+                    f"exceeds limit {MAX_PER_CALL_CHARS} — context explosion detected"
                 )
 
         return budget_hook
