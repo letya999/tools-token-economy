@@ -73,12 +73,15 @@ class GitIsolationProvider:
 
         # Cleanup if directory already exists
         if os.path.exists(wt_path):
-            try:
-                shutil.rmtree(wt_path)
-            except Exception:
-                _log.debug("Manual rmtree failed, trying worktree prune for %s", wt_path)
-                subprocess.run([self.git_cmd, "worktree", "prune"], cwd=self.repo_path)
-                shutil.rmtree(wt_path, ignore_errors=True)
+            shutil.rmtree(wt_path, ignore_errors=True)
+
+        # Always prune stale git worktree registrations before adding a new one.
+        # Required when a previous run was killed after `git worktree add` but before
+        # teardown — git retains the registration even after the directory is removed.
+        subprocess.run(
+            [self.git_cmd, "worktree", "prune"],
+            cwd=self.repo_path, capture_output=True,
+        )
 
         subprocess.run(
             [self.git_cmd, "worktree", "add", wt_path, "HEAD"],
