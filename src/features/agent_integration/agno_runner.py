@@ -13,6 +13,7 @@ from typing import Any
 
 import tiktoken
 from agno.agent import Agent
+from agno.exceptions import InputCheckError
 from agno.models.openai import OpenAIChat
 from agno.run.agent import RunOutput
 from agno.tools import tool as agno_tool
@@ -165,7 +166,9 @@ class AgnoRunner:
 
             if estimated_cost > max_cost_usd:
                 _log.warning("Budget pre-hook: estimated cost $%.4f exceeds limit $%.2f", estimated_cost, max_cost_usd)
-                raise BudgetExceededError(
+                # Must raise InputCheckError — agno's execute_pre_hooks only re-raises
+                # InputCheckError/OutputCheckError; any other Exception is swallowed.
+                raise InputCheckError(
                     f"Pre-hook aborted: estimated input cost ${estimated_cost:.4f} "
                     f"exceeds per-config limit ${max_cost_usd:.2f}"
                 )
