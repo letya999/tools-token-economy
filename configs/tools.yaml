@@ -2,80 +2,80 @@ configs:
   - id: "01_cursor_like"
     name: "Cursor-like"
     archetype: "cursor"
-    tools: ["repo_map", "simple_rag", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["repo_map", "simple_rag", "read", "write", "edit", "patch", "insert_after", "shell"]
   - id: "02_claude_code_like"
     name: "Claude Code-like"
     archetype: "claude"
-    tools: ["glob", "rg", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["glob", "rg", "read", "write", "edit", "patch", "insert_after", "shell"]
   - id: "03_gemini_like"
     name: "Gemini-like"
     archetype: "gemini"
-    tools: ["repo_map", "read_all", "rg", "write", "patch", "insert_after", "shell"]
+    tools: ["repo_map", "read_all", "rg", "write", "edit", "patch", "insert_after", "shell"]
   - id: "04_codex_like"
     name: "Codex-like"
     archetype: "codex"
-    tools: ["grep", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["grep", "read", "write", "edit", "patch", "insert_after", "shell"]
   - id: "05_read_only"
-    name: "Mechanism: Read Only"
+    name: "Ablation: Read Only"
     archetype: "ablation"
-    tools: ["read", "write", "patch", "insert_after", "shell"]
+    tools: ["read", "write", "edit", "patch", "insert_after"]
   - id: "06_read_all"
-    name: "Mechanism: Read All"
+    name: "Ablation: Read All"
     archetype: "ablation"
-    tools: ["read_all", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["read_all", "read", "write", "edit", "patch", "insert_after"]
   - id: "07_grep"
-    name: "Mechanism: Grep"
+    name: "Ablation: Grep"
     archetype: "ablation"
-    tools: ["grep", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["grep", "read", "write", "edit", "patch", "insert_after"]
   - id: "08_git_grep"
-    name: "Mechanism: Git Grep"
+    name: "Ablation: Git Grep"
     archetype: "ablation"
-    tools: ["git_grep", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["git_grep", "read", "write", "edit", "patch", "insert_after"]
   - id: "09_rg"
-    name: "Mechanism: Ripgrep"
+    name: "Ablation: Ripgrep"
     archetype: "ablation"
-    tools: ["rg", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["rg", "read", "write", "edit", "patch", "insert_after"]
   - id: "10_ugrep"
-    name: "Mechanism: Ugrep"
+    name: "Ablation: Ugrep"
     archetype: "ablation"
-    tools: ["ugrep", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["ugrep", "read", "write", "edit", "patch", "insert_after"]
   - id: "11_ast_grep"
-    name: "Mechanism: ast-grep"
+    name: "Ablation: ast-grep"
     archetype: "ablation"
-    tools: ["ast_grep", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["ast_grep", "read", "write", "edit", "patch", "insert_after"]
   - id: "12_tree_sitter"
-    name: "Mechanism: Tree-sitter"
+    name: "Ablation: Tree-sitter"
     archetype: "ablation"
-    tools: ["tree_sitter", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["tree_sitter", "read", "write", "edit", "patch", "insert_after"]
   - id: "13_lsp"
-    name: "Mechanism: LSP Symbols"
+    name: "Ablation: LSP Symbols"
     archetype: "ablation"
-    tools: ["lsp_symbols", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["lsp_symbols", "read", "write", "edit", "patch", "insert_after"]
   - id: "14_repo_map"
-    name: "Mechanism: Repo Map"
+    name: "Ablation: Repo Map"
     archetype: "ablation"
-    tools: ["repo_map", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["repo_map", "read", "write", "edit", "patch", "insert_after"]
   - id: "15_simple_rag"
-    name: "Mechanism: Simple RAG"
+    name: "Ablation: Simple RAG"
     archetype: "ablation"
-    tools: ["simple_rag", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["simple_rag", "read", "write", "edit", "patch", "insert_after"]
   - id: "16_serena_only"
     name: "Semantic: Serena Only"
     archetype: "semantic"
-    tools: ["serena", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["serena", "read", "write", "edit", "patch", "insert_after"]
   - id: "17_semble_only"
     name: "Semantic: Semble Only"
     archetype: "semantic"
-    tools: ["semble", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["semble", "read", "write", "edit", "patch", "insert_after"]
   - id: "18_rg_repo_map"
     name: "Hybrid: RG + Repo Map"
     archetype: "hybrid"
-    tools: ["repo_map", "rg", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["repo_map", "rg", "read", "write", "edit", "patch", "insert_after"]
   - id: "19_rg_lsp"
     name: "Hybrid: RG + LSP"
     archetype: "hybrid"
-    tools: ["rg", "lsp_symbols", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["rg", "lsp_symbols", "read", "write", "edit", "patch", "insert_after"]
   - id: "20_serena_semble"
     name: "Hybrid: Serena + Semble"
     archetype: "hybrid"
-    tools: ["serena", "semble", "read", "write", "patch", "insert_after", "shell"]
+    tools: ["serena", "semble", "read", "write", "edit", "patch", "insert_after"]

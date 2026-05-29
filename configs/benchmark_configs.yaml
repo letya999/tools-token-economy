@@ -2,16 +2,29 @@ benchmark:
   repo: "C:\\Users\\User\\a_projects\\process_metrics_platform_v2"
   test_cmd: "uv run --extra dev pytest tests/unit/ -q"
   timeout_sec: 1200
+  target_file: "tests/unit/test_api_google_oauth.py"
+  target_test: "tests/unit/test_api_google_oauth.py"
+  required_files:
+    - "tests/unit/test_api_google_oauth.py"
+    - "src/api/google_oauth.py"
   task: >
-    Add exactly ONE new async test function to tests/unit/test_api_google_oauth.py.
-    Name it test_google_redirect_includes_required_scopes. It must verify that
-    the Google OAuth redirect URL contains all three required OAuth scopes: openid,
-    email, and profile. Use the existing pattern from the file: decorate with
-    @pytest.mark.asyncio, create a request with _make_request(), call
-    await admin_api.admin_google_redirect(request, return_to=None), then use
-    urlparse and parse_qs (both imported at line 2) to extract the scope query
-    parameter from response.headers['location'] and assert 'openid', 'email',
-    and 'profile' are all present in it. Do not modify any other file.
+    Implement a system-wide execution timeout for all background data processing 
+    operations (specifically Jira synchronization and metrics recalculation jobs). 
+
+    1. Identify the primary service responsible for dispatching these jobs 
+       to the external orchestrator.
+    2. Modify this service to enforce a mandatory 1-hour (3600 seconds) 
+       timeout. This timeout must be passed as a 'timeout' tag within 
+       the execution parameters sent to the orchestrator.
+    3. Locate all call sites (API endpoints and internal handlers) that 
+       initiate these background jobs and update them to comply with the 
+       new signature/logic.
+    4. Ensure that all unit tests related to job triggering are updated 
+       to reflect this change and continue to pass.
+
+    You MUST use your retrieval tools to discover the relevant components. 
+    Finalize by calling write/patch to save changes and output: TASK_COMPLETE.
+
 
 configs:
   - id: "01_cursor_like"

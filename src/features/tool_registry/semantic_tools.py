@@ -106,10 +106,19 @@ class SimpleRagTool(BaseTool):
 
         points = []
         point_id = 1
-        _SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build"}
+        _SKIP_DIRS = {
+            ".git", "node_modules", "__pycache__",
+            ".venv", "venv", ".venv-wsl", ".venv-win",
+            "site-packages", "dist-packages",
+            "dist", "build", ".tox", ".mypy_cache", ".ruff_cache",
+            ".pytest_cache",
+        }
+
+        def _should_skip(d: str) -> bool:
+            return d in _SKIP_DIRS or d.endswith(".egg-info") or d.startswith(".venv")
 
         for root, dirs, files in os.walk(self.worktree_path):
-            dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+            dirs[:] = [d for d in dirs if not _should_skip(d)]
             for fname in files:
                 if not fname.endswith(".py"):
                     continue

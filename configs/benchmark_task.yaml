@@ -10,34 +10,28 @@ target_repo:
 
 task:
   description: |
-    Complete the full schedule/sensor lifecycle control surface in the Admin UI.
-    
-    IMPORTANT: You MUST call `write` or `patch` to persist changes. Simply reading
-    and stating what needs to change is a failure. Use RELATIVE file paths.
+    Add schedule and sensor management to the admin API.
 
-    1. Add FastAPI endpoints in app/api/admin.py:
-       - GET  /api/v1/schedules         — list all Dagster schedules with status (running/stopped)
-       - POST /api/v1/schedules/{name}/start  — start a schedule
-       - POST /api/v1/schedules/{name}/stop   — stop a schedule
-       - GET  /api/v1/sensors            — list all sensors with status
-       - POST /api/v1/sensors/{name}/start    — start a sensor
-       - POST /api/v1/sensors/{name}/stop     — stop a sensor
-       - GET  /api/v1/runs               — run history (last 50 runs, with status/timestamps)
-       - POST /api/v1/runs/{run_id}/rerun     — one-click rerun for a failed/completed run
+    The application already has a Dagster-based pipeline system with schedules and sensors.
+    The admin API currently has job management endpoints. Extend it by adding:
 
-    2. Add a new Streamlit page in streamlit_admin/ for schedule/sensor management.
+    1. Endpoints to list all Dagster schedules with their current running status
+    2. Endpoints to start and stop individual schedules by name
+    3. Endpoints to list all Dagster sensors with their current running status
+    4. Endpoints to start and stop individual sensors by name
 
-    Finalize by outputting exactly: TASK_COMPLETE
+    Follow the existing patterns in the codebase for authentication, error handling,
+    and response formatting. Add at least one unit test for the new functionality.
 
-  # Command to verify the task was completed correctly
-  test_cmd: "python -m pytest tests/ -v --tb=short -q -m 'unit or not integration'"
+    You MUST use write or patch to save changes to disk. Reading without writing is a failure.
+    When done, output exactly: TASK_COMPLETE
 
-  # Acceptance criteria for success evaluation
+  test_cmd: "python -m pytest tests/unit/ -v --tb=short -q"
+
   success_criteria:
-    - "All new API endpoints return 200 on valid input"
-    - "Schedule list includes at least one schedule"
-    - "Run history returns paginated results"
-    - "Tests pass without errors"
+    - "New schedule and sensor endpoints are present in the codebase"
+    - "At least one new unit test added"
+    - "Existing tests still pass"
 
 setup:
   # Run these once to prepare the benchmark environment (from WSL)

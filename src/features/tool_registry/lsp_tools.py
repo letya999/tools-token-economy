@@ -58,7 +58,7 @@ class LspSymbolsTool(BaseTool):
                 
                 if is_inside and not is_external:
                     rel = os.path.relpath(real_fpath, self.worktree_path)
-                    results.append(f"{rel}: {d.type}: {d.name} (line {d.line})")
+                    results.append(f"Found symbol '{d.name}' in {rel} at line {d.line}")
             return self.format_result("\n".join(results) if results else f"Symbol '{symbol}' not found.")
         except Exception as e:
             return self.format_result(f"Search error: {e}")

@@ -34,6 +34,11 @@ class FileReadTool(BaseTool):
 
             selected_lines = lines[start_line - 1 : end_line]
             output = "".join(selected_lines)
+            
+            _MAX_CHARS = 20_000
+            if len(output) > _MAX_CHARS:
+                output = output[:_MAX_CHARS] + f"\n\n[OUTPUT TRUNCATED at {_MAX_CHARS} chars. Use start_line/end_line to read a specific section.]"
+            
             return self.format_result(output)
         except Exception as e:
             return self.format_result(f"Error reading file: {e}")
@@ -45,24 +50,38 @@ class ReadAllTool(BaseTool):
 
     def execute(self) -> ToolResult:
         output = []
+        _MAX_FILES = 30
+        _MAX_CHARS = 30_000
+        _PER_FILE_CAP = 5_000
+        
+        files_read = 0
         for root, dirs, files in os.walk(self.worktree_path):
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('venv', '__pycache__', 'node_modules')]
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('venv', '__pycache__', 'node_modules', '.git')]
             for file in files:
+                if files_read >= _MAX_FILES:
+                    output.append(f"\n[TRUNCATED: read_all limit of {_MAX_FILES} files reached. Use rg/read for remaining files.]")
+                    break
+                
                 _, ext = os.path.splitext(file)
                 if ext.lower() in _BINARY_EXTENSIONS:
                     continue
                 rel_path = os.path.relpath(os.path.join(root, file), self.worktree_path)
                 try:
                     with open(os.path.join(root, file), encoding="utf-8") as f:
-                        content = f.read()
+                        content = f.read(_PER_FILE_CAP)
+                        if len(content) >= _PER_FILE_CAP:
+                            content += "\n[TRUNCATED: per-file cap reached]"
                         output.append(f"--- FILE: {rel_path} ---\n{content}")
+                        files_read += 1
                 except Exception:
                     continue
+            else:
+                continue
+            break
         
-        _MAX_CHARS = 200_000
         result = "\n\n".join(output)
         if len(result) > _MAX_CHARS:
-            result = result[:_MAX_CHARS] + "\n\n[TRUNCATED: output exceeded 200000 chars limit]"
+            result = result[:_MAX_CHARS] + f"\n\n[OUTPUT TRUNCATED: read_all exceeded {_MAX_CHARS} chars]"
         return self.format_result(result)
 
 class FileWriteTool(BaseTool):
@@ -76,12 +95,78 @@ class FileWriteTool(BaseTool):
             raise PermissionError(f"Access denied: {file_path}")
 
         try:
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            # Safety guard: reject writes that would destroy significant existing content.
+            if os.path.isfile(full_path):
+                with open(full_path, encoding="utf-8") as f:
+                    orig_lines = f.readlines()
+                new_lines = content.splitlines()
+                if len(orig_lines) > 80 and len(new_lines) < 0.7 * len(orig_lines):
+                    return self.format_result(
+                        f"Error: Write rejected — would delete {len(orig_lines) - len(new_lines)} existing lines "
+                        f"({len(new_lines)} new vs {len(orig_lines)} current).\n"
+                        f"Options:\n"
+                        f"  1. To MODIFY a specific function/block: use `edit` with the exact old text as old_string\n"
+                        f"  2. To ADD new code at end of file: use `insert_after` with anchor=last unique line\n"
+                        f"  3. To make targeted line changes: use `patch` with a unified diff\n"
+                        f"  4. To replace the full file: read ALL sections first (use read with start_line/end_line), "
+                        f"then rewrite with complete content ({len(orig_lines)} lines minimum expected)"
+                    )
+
+            os.makedirs(os.path.dirname(full_path) if os.path.dirname(full_path) else '.', exist_ok=True)
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(content)
             return self.format_result(f"Successfully wrote to {file_path}")
         except Exception as e:
             return self.format_result(f"Error writing file: {e}")
+
+class StrReplaceEditTool(BaseTool):
+    def __init__(self, worktree_path: str):
+        super().__init__(
+            "edit",
+            "Replaces an exact string in an existing file. "
+            "Use to modify specific sections without touching the rest of the file. "
+            "`old_string` must be a unique substring of the current file content. "
+            "`new_string` replaces it exactly. Returns error if not found or not unique."
+        )
+        self.worktree_path = worktree_path
+
+    def execute(self, file_path: str, old_string: str, new_string: str) -> ToolResult:
+        full_path = self._safe_path(self.worktree_path, file_path)
+        if full_path is None:
+            raise PermissionError(f"Access denied: {file_path}")
+        if not os.path.isfile(full_path):
+            return self.format_result(f"Error: File not found: {file_path}. Use `write` to create new files.")
+
+        try:
+            with open(full_path, encoding="utf-8") as f:
+                content = f.read()
+
+            count = content.count(old_string)
+            if count == 0:
+                # Provide helpful context: show first 200 chars of file
+                preview = content[:200].replace('\n', '↵')
+                return self.format_result(
+                    f"Error: `old_string` not found in {file_path}.\n"
+                    f"File preview (first 200 chars): {preview}\n"
+                    "Tip: Read the relevant section of the file first to get the exact text."
+                )
+            if count > 1:
+                return self.format_result(
+                    f"Error: `old_string` matches {count} locations in {file_path}. "
+                    "Make `old_string` more specific by including more surrounding context."
+                )
+
+            new_content = content.replace(old_string, new_string, 1)
+
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+
+            lines_changed = abs(new_string.count('\n') - old_string.count('\n'))
+            return self.format_result(
+                f"Successfully edited {file_path} (+/-{lines_changed} lines net change)."
+            )
+        except Exception as e:
+            return self.format_result(f"Error editing file: {e}")
 
 class GlobTool(BaseTool):
     def __init__(self, worktree_path: str):

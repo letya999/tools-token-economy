@@ -495,6 +495,11 @@ class PreflightChecker:
         for extra in extras:
             cmd += ["--extra", extra]
         _log.info("Running `%s` in target repo: %s", " ".join(cmd), self.repo_path)
+        # Strip UV_PROJECT_ENVIRONMENT so target repo creates its own venv,
+        # not reusing (and overwriting) the benchmark's venv.
+        _env = os.environ.copy()
+        _env.pop("UV_PROJECT_ENVIRONMENT", None)
+        _env.pop("UV_LINK_MODE", None)
         try:
             proc = subprocess.run(
                 cmd,
@@ -502,6 +507,7 @@ class PreflightChecker:
                 capture_output=True,
                 text=True,
                 timeout=120,
+                env=_env,
             )
             if proc.returncode == 0:
                 extra_str = f" (extras: {', '.join(extras)})" if extras else ""

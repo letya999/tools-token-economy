@@ -42,6 +42,60 @@ class MetricsAggregator:
 
         return run_dir
 
+    def list_sessions(self) -> list[dict]:
+        """Return metadata for all known sessions in results dir."""
+        from src.features.multi_run import list_sessions
+        return list_sessions(self.results_base_dir)
+
+    def generate_session_rankings(self, session_id: str, percentile: int = 75) -> str:
+        """Aggregate N reps of session_id at given percentile and print ranking table."""
+        from src.features.multi_run import aggregate_session
+        agg = aggregate_session(self.results_base_dir, session_id, percentile)
+        
+        rows = []
+        for config_id, stats in agg.items():
+            rows.append({
+                "config_id": config_id,
+                "n": stats["metadata"]["n"],
+                "success_rate": stats["success_rate"],
+                "total_tokens": stats["total_tokens"],
+                "success_per_token": stats["success_per_token"],
+                "duration_sec": round(stats["duration_sec"], 2),
+                "model_calls": stats["model_calls"],
+                "tool_calls": stats["tool_calls"],
+                "task_solved": stats["task_solved_score"],
+                "tool_correct": stats["tool_correctness_score"],
+                "cost_usd": round(stats["cost_usd"], 6),
+            })
+
+        if not rows:
+            return f"No results found for session {session_id} to rank."
+
+        # Sort by success_rate desc, task_solved_score desc, success_per_token desc, total_tokens asc
+        rows.sort(key=lambda r: (-r["success_rate"], -r["task_solved"], -r["success_per_token"], r["total_tokens"]))
+
+        lines = [
+            f"# Session Rankings: {session_id} (p{percentile})",
+            "",
+            f"Showing aggregates across multiple runs for session {session_id}.",
+            "",
+            "| # | Config | N | Succ% | Solved | Tools | Tokens | Success/Token | Dur(s) | Model | Tools | Cost USD |",
+            "|---|--------|---|-------|--------|-------|--------|---------------|--------|-------|-------|----------|",
+        ]
+        for i, r in enumerate(rows, 1):
+            lines.append(
+                f"| {i} | {r['config_id']} | {r['n']} | {r['success_rate']:.1%} | {r['task_solved']:.2f} | {r['tool_correct']:.2f} | {int(r['total_tokens'])} | {r['success_per_token']:.8f} "
+                f"| {r['duration_sec']} | {int(r['model_calls'])} | {int(r['tool_calls'])} | {r['cost_usd']:.6f} |"
+            )
+        output = "\n".join(lines)
+
+        # Also save to file
+        rankings_path = os.path.join(self.results_base_dir, f"RANKINGS_{session_id}_p{percentile}.md")
+        with open(rankings_path, "w", encoding="utf-8") as f:
+            f.write(output)
+
+        return output
+
     def generate_rankings(self) -> str:
         """
         Reads all metrics.json files from results directory and generates

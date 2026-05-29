@@ -6,7 +6,7 @@ Before doing any coding work on this repo, follow this two-phase protocol:
 
 ### Phase 1 — Setup (run once, or after environment changes)
 ```bash
-wsl bash -c "cd /mnt/c/Users/User/a_projects/tools_token_economy && uv run python main.py --setup"
+wsl bash -c "bash /mnt/c/Users/User/a_projects/tools_token_economy/scripts/run_wsl.sh --setup"
 ```
 This runs 6 stages: platform detection → system tools → Python version → target repo sync →
 preflight checks (tool CLIs, API keys, smoke tests) → dry-run of all 20 configs.
@@ -21,7 +21,7 @@ and re-run `--setup`. Do not proceed to Phase 2 until all stages pass.
 
 ### Phase 2 — Run benchmark
 ```bash
-wsl bash -c "cd /mnt/c/Users/User/a_projects/tools_token_economy && uv run python main.py"
+wsl bash -c "bash /mnt/c/Users/User/a_projects/tools_token_economy/scripts/run_wsl.sh"
 ```
 **Success looks like**: 20 configs run, each logs `Config XX done. Success=True/False`.
 Results appear in `results/run_TIMESTAMP_*/metrics.json`.
@@ -44,6 +44,97 @@ uv run python main.py --dashboard
 
 **Dashboard tabs**: Leaderboard · Config Explorer · Charts · Run Info · Weights · Glossary · Config Deep Dive · All Metrics.
 Language switching (EN/RU) is available in the sidebar.
+
+
+### Multi-Run: Statistical Significance
+
+Run the same benchmark N times to get stable p75 estimates:
+
+    uv run python main.py --runs 10
+
+All 10 repetitions share a session ID. Results are stored as:
+    results/run_{session_id}_r001_{config_id}/
+    results/run_{session_id}_r002_{config_id}/
+    ...
+    results/session_{session_id}_meta.json
+
+The Streamlit dashboard auto-detects multi-run sessions and shows p75
+aggregated metrics with a "10 runs · p75" badge.
+
+Recommended N per use case:
+  - Quick sanity check:      3 runs
+  - Exploratory comparison:  5 runs
+  - Publication-quality:    10 runs
+
+Note: N=10 with 20 configs = 200 agent runs. Budget: ~$2.75 at gpt-4.1-mini rates
+      (based on $0.00275/config median from 2026-05-26 run × 200 = $0.55 for agents
+       + ~$1.40 for 7×200=1400 judge calls = ~$2.00 total estimate).
+
+
+### Adding a New Config (Tool Strategy)
+
+1. Open `configs/tools.yaml` (or `configs/benchmark_configs.yaml` in legacy mode)
+2. Add a new entry under `configs:`:
+   ```yaml
+   - id: "21_my_strategy"
+     name: "My Strategy"
+     archetype: "ablation"         # cursor|claude|gemini|codex|ablation|semantic|hybrid
+     tools: ["rg", "read", "write", "patch", "shell"]
+     max_steps: 30                 # optional, overrides provider default
+   ```
+3. Valid tool names: read, read_all, write, patch, insert_after, glob, rg, grep,
+   git_grep, ugrep, ast_grep, semgrep, tree_sitter, lsp_symbols, repo_map,
+   simple_rag, serena, semble, shell
+4. Run `uv run python main.py --dry-run --config-ids 21_my_strategy` to verify it loads.
+5. Run `uv run python main.py --config-ids 21_my_strategy` for a real single-config test.
+
+
+### Adding a New Tool
+
+A tool is a class in `src/features/tool_registry/` that inherits `BaseTool` from
+`src/core/tools.py`. Full checklist:
+
+1. Create `src/features/tool_registry/tools/{tool_name}/` directory with:
+   - `__init__.py` (empty or re-exports)
+   - `validator.py` — optional `ToolValidator` for preflight checks
+
+2. Implement the tool in the appropriate file:
+   - File search/grep tools → `src/features/tool_registry/grep_tools.py`
+   - File read/write tools → `src/features/tool_registry/basic_tools.py`
+   - AST/LSP tools        → `src/features/tool_registry/structural_tools.py`
+   - Semantic MCP tools   → `src/features/tool_registry/semantic_tools.py`
+   - Shell wrapper        → `src/features/tool_registry/shell_tool.py`
+
+   Minimal tool skeleton:
+   ```python
+   from src.core.tools import Tool, ToolResult
+
+   class MyTool(Tool):
+       name = "my_tool"
+       description = "One-line description shown to the agent as tool docstring."
+
+       def execute(self, query: str, path: str = ".") -> ToolResult:
+           # all file paths are relative to self.worktree_path
+           ...
+           return self.format_result(output_str)
+   ```
+   - `format_result(str)` returns a `ToolResult(output=str)`.
+   - If the tool is a shell wrapper: use `ShellExecutor(worktree_path).run(cmd)`.
+   - Do NOT raise exceptions — return `self.format_result("Error: ...")` on failure.
+
+3. Register in `src/features/tool_registry/registry.py`:
+   ```python
+   "my_tool": lambda wt: MyTool(worktree_path=wt),
+   ```
+
+4. Write a test in `tests/features/` verifying execute() returns non-empty output.
+
+5. Run `uv run pytest tests/features/test_your_tool.py -q` before committing.
+
+6. Add to `configs/tools.yaml` in one or more configs, or create a new ablation config.
+
+7. Add doctor check in `src/features/doctor.py` if the tool depends on a binary
+   (follow the existing pattern for `rg`, `ugrep`, `ast-grep`).
 
 ---
 

@@ -32,4 +32,8 @@ class ShellTool(BaseTool):
                 out += f"\n(exit code: {result.exit_code})"
             full_output.append(out)
         
-        return self.format_result("\n\n".join(full_output))
+        _MAX_SHELL_OUTPUT = 2_000
+        combined = "\n\n".join(full_output)
+        if len(combined) > _MAX_SHELL_OUTPUT:
+            combined = combined[:_MAX_SHELL_OUTPUT] + f"\n\n[OUTPUT TRUNCATED: shell output exceeded {_MAX_SHELL_OUTPUT} chars]"
+        return self.format_result(combined)

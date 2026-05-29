@@ -1,8 +1,11 @@
 
+import logging
+import warnings
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, computed_field
 
+_log = logging.getLogger(__name__)
 
 @dataclass
 class McpServerConfig:
@@ -15,13 +18,18 @@ class McpServerConfig:
     def resolve_args(self, worktree_path: str) -> list[str]:
         return [a.replace("{path}", worktree_path) for a in self.args_template]
 
+    def resolve_warmup_args(self, worktree_path: str) -> dict:
+        return {k: v.replace("{path}", worktree_path) if isinstance(v, str) else v for k, v in self.warmup_args.items()}
+
 
 class ProviderConfig(BaseModel):
     provider: str = "openai"
     model: str = "openai/gpt-4.1-mini"
     api_base: str = ""
     max_steps: int = 50
+    max_iterations: int = 20
     temperature: float = 0.0
+    seed: int | None = 42
 
 
 class TaskConfig(BaseModel):
@@ -73,6 +81,8 @@ class RunMetrics(BaseModel):
     input_tokens: int
     output_tokens: int
     tool_tokens: int
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     duration_sec: float
     model_calls: int
     tool_calls: int
@@ -108,6 +118,7 @@ class RunMetrics(BaseModel):
     time_to_target: int = 0
     context_waste_ratio: float = 0.0
     warmup_sec: float = 0.0
+    test_stderr: str = ""
 
     @computed_field
     @property
@@ -128,27 +139,39 @@ class RunMetrics(BaseModel):
         pricing = {
             "gemini-2.0-flash": {"input": 0.1, "output": 0.4},
             "gemini-2.5-flash": {"input": 0.1, "output": 0.4},
-            "gpt-4o": {"input": 2.5, "output": 10.0},
+            "gpt-4o": {"input": 2.5, "output": 10.0, "cached_input": 1.25},
             "claude-3-5-sonnet": {"input": 3.0, "output": 15.0},
-            "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-            "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
-            "gpt-4.1-nano": {"input": 0.10, "output": 0.40},
-            "openai/gpt-4.1-nano": {"input": 0.10, "output": 0.40},
-            "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
-            "openai/gpt-4.1-mini": {"input": 0.40, "output": 1.60},
+            "gpt-4o-mini": {"input": 0.15, "output": 0.60, "cached_input": 0.075},
+            "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60, "cached_input": 0.075},
+            "gpt-4.1-nano": {"input": 0.10, "output": 0.40, "cached_input": 0.025},
+            "openai/gpt-4.1-nano": {"input": 0.10, "output": 0.40, "cached_input": 0.025},
+            "gpt-4.1-mini": {"input": 0.40, "output": 1.60, "cached_input": 0.10},
+            "openai/gpt-4.1-mini": {"input": 0.40, "output": 1.60, "cached_input": 0.10},
             "deepseek-coder": {"input": 0.14, "output": 0.28},
             "openrouter/deepseek/deepseek-coder": {"input": 0.32, "output": 0.89},
         }
 
-        # Default to gemini-2.0-flash pricing if unknown
-        p = pricing.get(self.model_name, pricing["gemini-2.0-flash"])
+        model_key = self.model_name
+        p = pricing.get(model_key)
+        if p is None:
+            # Try stripping common prefixes
+            stripped = model_key.replace("openai/", "").replace("google/", "").replace("anthropic/", "")
+            p = pricing.get(stripped)
+            
+        if p is None:
+            warnings.warn(f"Unknown model pricing for '{model_key}', defaulting to gpt-4.1-mini rates.")
+            p = pricing["openai/gpt-4.1-mini"]
 
-        input_cost = (self.input_tokens / 1_000_000) * p["input"]
+        cached_input = self.cache_read_tokens
+        non_cached_input = max(0, self.input_tokens - cached_input)
+        
+        input_cost = (non_cached_input / 1_000_000) * p["input"]
+        cached_cost = (cached_input / 1_000_000) * p.get("cached_input", p["input"] * 0.25)
         output_cost = (self.output_tokens / 1_000_000) * p["output"]
-        # Tool tokens are usually sent back to input in the next turn
-        tool_cost = (self.tool_tokens / 1_000_000) * p["input"]
+        
+        # Note: Tool tokens are already included in input_tokens in subsequent turns.
+        return input_cost + cached_cost + output_cost
 
-        return input_cost + output_cost + tool_cost
     @computed_field
     @property
     def success_per_token(self) -> float:

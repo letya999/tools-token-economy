@@ -30,24 +30,30 @@ if ! command -v uvx &>/dev/null; then
     exit 1
 fi
 
-# semble mcp takes a positional path argument (NOT --path).
-# Run against /tmp with a short timeout to confirm the binary starts cleanly.
+# semble starts as MCP stdio server when called as: semble [path]
+# There is NO 'mcp' subcommand — the first non-CLI-dispatch arg triggers MCP mode.
 SEMBLE_TMP="$(mktemp -d)"
-timeout 5 uvx --from "semble[mcp]" semble mcp "$SEMBLE_TMP" &>/dev/null \
-    && echo "[OK] semble mcp starts cleanly" \
-    || echo "[OK] semble mcp exited (expected on early timeout)"
+timeout 5 uvx --from "semble[mcp]" semble "$SEMBLE_TMP" &>/dev/null \
+    && echo "[OK] semble starts cleanly as MCP server" \
+    || echo "[OK] semble MCP exited (expected on early timeout)"
 rm -rf "$SEMBLE_TMP"
 
 echo ""
-echo "=== Semble pre-warm ==="
-# Pre-download semble package so first benchmark run doesn't time out
-if ! uvx --from semble semble --version &>/dev/null 2>&1; then
-    echo "Downloading semble via uvx (first-time install)..."
-    uv tool install semble || uvx --from semble semble --help || true
-fi
+echo "=== Semble model pre-warm ==="
+# Clean incomplete model blobs before attempting download
+BLOBS_DIR="$HOME/.cache/huggingface/hub/models--minishlab--potion-code-16M/blobs"
+[ -d "$BLOBS_DIR" ] && find "$BLOBS_DIR" -name "*.incomplete" -delete 2>/dev/null && echo "Cleaned incomplete blobs"
+
+# Download potion-code-16M model if not fully cached
+uvx --from "semble[mcp]" python -c "
+from model2vec import StaticModel
+m = StaticModel.from_pretrained('minishlab/potion-code-16M')
+print('[OK] model ready:', type(m).__name__)
+" 2>&1 || echo "[WARN] model preload failed"
+
 # Mark warmup done
 touch ~/.semble_warmed_up
-uvx --from semble semble --version 2>/dev/null && echo "[OK] semble ready" || echo "[WARN] semble not verified"
+echo "[OK] semble ready"
 
 echo ""
 echo "Serena/Semble verification complete."

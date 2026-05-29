@@ -155,6 +155,12 @@ def main():
         metavar="ID",
         help="Run only the specified config IDs (e.g. 02_claude_code_like 05_read_only).",
     )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="Number of full benchmark repetitions (runs) to execute.",
+    )
     parser.add_argument("--doctor", action="store_true", help="Run infrastructure health checks")
     parser.add_argument("--auto-fix", action="store_true", help="Attempt to auto-fix issues found by --doctor")
     parser.add_argument("--setup", action="store_true",
@@ -249,6 +255,7 @@ def main():
         results_dir=args.results,
         worktree_base=args.worktree_base,
         dry_run=args.dry_run,
+        n_runs=args.runs,
     )
 
     if args.retry_failed is not None:

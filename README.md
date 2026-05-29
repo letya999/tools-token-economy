@@ -65,14 +65,29 @@ Generates `results/dashboard_TIMESTAMP.html` — no server required.
 
 ---
 
-## Adding a New Benchmark Config
+## Multi-Run Benchmark (Statistical Significance)
 
-1. Open `configs/benchmark_configs.yaml`
+Run the same benchmark N times to get stable metrics:
+    uv run python main.py --runs 10
+
+The dashboard auto-aggregates at p75 and shows a "10 runs · p75" badge.
+See AGENTS.md → "Multi-Run Statistical Benchmark" for budget estimates and N recommendations.
+
+---
+
+## Extending the Benchmark
+
+### Adding a New Config
+1. Open `configs/tools.yaml` (or `configs/benchmark_configs.yaml` in legacy mode)
 2. Add a new entry under `configs:` with a unique `id`, `name`, `archetype`, and `tools` list
-3. Available tools: `read`, `write`, `patch`, `glob`, `rg`, `grep`, `git_grep`, `ugrep`,
-   `ast_grep`, `semgrep`, `tree_sitter`, `lsp_symbols`, `repo_map`, `simple_rag`,
-   `serena`, `semble`, `shell`, `insert_after`
-4. Run `python main.py --dry-run --config-ids your_new_id` to verify it loads
+3. Valid tool names: read, read_all, write, patch, insert_after, glob, rg, grep,
+   git_grep, ugrep, ast_grep, semgrep, tree_sitter, lsp_symbols, repo_map,
+   simple_rag, serena, semble, shell
+4. Run `uv run python main.py --dry-run --config-ids your_new_id` to verify it loads.
+
+### Adding a New Tool
+See AGENTS.md → "Adding a New Tool" for the full step-by-step checklist
+(tool class skeleton, registry registration, test, doctor check).
 
 ---
 

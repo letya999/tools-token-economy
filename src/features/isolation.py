@@ -6,6 +6,55 @@ import subprocess
 _log = logging.getLogger(__name__)
 
 
+class DirectCopyIsolationProvider:
+    """
+    Provides environment isolation by copying the repo to a temp directory.
+    Useful for avoiding NTFS/WSL PATH issues.
+    """
+    def __init__(self, repo_path: str, worktree_base: str):
+        self.repo_path = os.path.abspath(repo_path)
+        self.worktree_base = os.path.abspath(worktree_base)
+        self.active_worktrees: dict[str, str] = {}
+
+    def setup(self, run_id: str) -> str:
+        wt_path = os.path.join(self.worktree_base, run_id)
+        if os.path.exists(wt_path):
+            shutil.rmtree(wt_path, ignore_errors=True)
+            
+        os.makedirs(os.path.dirname(wt_path), exist_ok=True)
+        _ignore = shutil.ignore_patterns(
+            ".git", ".venv", ".venv-wsl", ".venv-win", "venv",
+            "__pycache__", "*.pyc", "*.egg-info",
+            "node_modules", ".tox", ".mypy_cache", ".ruff_cache",
+        )
+        shutil.copytree(self.repo_path, wt_path, symlinks=False,
+                        ignore=_ignore, ignore_dangling_symlinks=True)
+
+        # Initialize a minimal git repo so `git diff HEAD` works after agent changes.
+        env = {**os.environ, "GIT_AUTHOR_NAME": "benchmark", "GIT_AUTHOR_EMAIL": "benchmark@local",
+               "GIT_COMMITTER_NAME": "benchmark", "GIT_COMMITTER_EMAIL": "benchmark@local"}
+        subprocess.run(["git", "init"], cwd=wt_path, capture_output=True, env=env)
+        subprocess.run(["git", "add", "-A"], cwd=wt_path, capture_output=True, env=env)
+        subprocess.run(["git", "commit", "-m", "baseline", "--allow-empty"],
+                       cwd=wt_path, capture_output=True, env=env)
+
+        self.active_worktrees[run_id] = wt_path
+        return wt_path
+
+    def teardown(self, run_id: str):
+        wt_path = self.active_worktrees.get(run_id)
+        if not wt_path and self.worktree_base:
+            wt_path = os.path.join(self.worktree_base, run_id)
+
+        if not wt_path:
+            return
+
+        if os.path.exists(wt_path):
+            shutil.rmtree(wt_path, ignore_errors=True)
+
+        if run_id in self.active_worktrees:
+            del self.active_worktrees[run_id]
+
 class GitIsolationProvider:
     """
     Provides environment isolation using git worktree.

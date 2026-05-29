@@ -22,10 +22,12 @@ fi
 if ! command -v uv &>/dev/null; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
-# UV_LINK_MODE=copy required: venv lives on Windows NTFS (/mnt/c), hardlinks
-# across Linux/NTFS boundaries fail and the fallback corrupts large packages (jedi, etc.)
+# Venv must live on native Linux fs to avoid NTFS I/O errors.
+# UV_LINK_MODE=copy needed because pyproject.toml is on /mnt/c (Windows FS).
+NATIVE_VENV="/home/$(whoami)/.venvs/tools_token_economy"
+mkdir -p "$(dirname "$NATIVE_VENV")"
+export UV_PROJECT_ENVIRONMENT="$NATIVE_VENV"
 export UV_LINK_MODE=copy
-uv venv --python 3.13
 uv sync
 
 # 3. Serena MCP server (installs global binary + creates ~/.serena/serena_config.yml)
@@ -58,5 +60,6 @@ if [ -z "$GOOGLE_API_KEY" ]; then
   echo "WARNING: GOOGLE_API_KEY is not set. Add to ~/.bashrc: export GOOGLE_API_KEY=your-key"
 fi
 
-echo "Setup complete. Run: source .venv/bin/activate"
-echo "Then: python main.py --repo $REPO_DIR --task '...' --results results_real"
+echo "Setup complete."
+echo "Run: UV_PROJECT_ENVIRONMENT=$NATIVE_VENV UV_LINK_MODE=copy uv run python main.py --worktree-base /home/\$(whoami)/_oc_worktrees [args]"
+echo "Or use: bash scripts/run_wsl.sh [args]"

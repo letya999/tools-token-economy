@@ -16,7 +16,7 @@ description: |
      to reflect this change and continue to pass.
 
   You MUST use your retrieval tools to discover the relevant components.
-  Finalize by calling write/patch to save changes and output: TASK_COMPLETE.
+  Finalize by saving changes with any write tool (edit, write, patch, or insert_after) and output: TASK_COMPLETE.
 test_cmd: "uv run --extra dev pytest tests/unit/ -q"
 timeout_sec: 1200
 target_file: "tests/unit/test_dagster_client.py"

@@ -43,8 +43,9 @@ def _to_platform_path(path: str) -> str:
 
 
 def _make_isolation_provider(repo_path: str, worktree_base: str):
-    if sys.platform != "win32" and repo_path.startswith("/mnt/"):
-        return DirectCopyIsolationProvider(repo_path, "/tmp/benchmark_runs")
+    # When repo is on /mnt/ (Windows FS mounted in WSL) and worktree_base is native Linux,
+    # GitIsolationProvider creates lightweight worktrees on fast native fs.
+    # DirectCopyIsolationProvider is only used when git is unavailable.
     return GitIsolationProvider(repo_path, worktree_base)
 
 
@@ -58,11 +59,15 @@ class BenchmarkOrchestrator:
             tool_name="serena",
             command="serena",
             args_template=["start-mcp-server", "--project", "{path}"],
+            warmup_call="list_memories",
+            warmup_args={},
         ),
         "semble": McpServerConfig(
             tool_name="semble",
             command="uvx",
             args_template=["--from", "semble[mcp]", "semble", "{path}"],
+            warmup_call="search",
+            warmup_args={"query": "def ", "repo": "{path}", "top_k": 1},
         ),
     }
 
@@ -76,6 +81,7 @@ class BenchmarkOrchestrator:
         results_dir: str,
         worktree_base: str = "worktrees",
         dry_run: bool = False,
+        n_runs: int = 1,
         **_kwargs,
     ):
         self.provider_config = provider_config
@@ -88,6 +94,7 @@ class BenchmarkOrchestrator:
         self.results_dir = os.path.abspath(results_dir)
         self.worktree_base = os.path.abspath(_to_platform_path(worktree_base))
         self.dry_run = dry_run
+        self.n_runs = n_runs
         self.timeout_sec = self.task_config.timeout_sec
         self.test_cmd = self.task_config.test_cmd
         self.validation_cmd = None
@@ -96,9 +103,9 @@ class BenchmarkOrchestrator:
         self.aggregator = MetricsAggregator(self.results_dir)
         self.isolation = _make_isolation_provider(self.repo_path, self.worktree_base)
         self.cost_guard = CostGuard(
-            max_suite_usd=_kwargs.get("max_suite_usd", 5.0),
-            max_config_usd=_kwargs.get("max_config_usd", 0.15),
-            max_tokens_per_config=_kwargs.get("max_tokens_per_config", 500_000),
+            max_suite_usd=_kwargs.get("max_suite_usd", 8.0),
+            max_config_usd=_kwargs.get("max_config_usd", 0.40),
+            max_tokens_per_config=_kwargs.get("max_tokens_per_config", 600_000),
         )
 
         os.makedirs(self.worktree_base, exist_ok=True)
@@ -109,9 +116,15 @@ class BenchmarkOrchestrator:
     def _setup_target_repo(self, repo_path: str, test_cmd: str) -> None:
         """Ensure target repo is installed and importable before benchmark starts."""
         self.logger.info("Running `uv sync --extra dev` in target repo: %s", repo_path)
+        # Strip UV_PROJECT_ENVIRONMENT so target repo creates its own venv,
+        # not reusing (and overwriting) the benchmark's venv.
+        _env = os.environ.copy()
+        _env.pop("UV_PROJECT_ENVIRONMENT", None)
+        _env.pop("UV_LINK_MODE", None)
         result = subprocess.run(
             ["uv", "sync", "--extra", "dev"],
-            cwd=repo_path, capture_output=True, text=True, timeout=300
+            cwd=repo_path, capture_output=True, text=True, timeout=300,
+            env=_env,
         )
         if result.returncode != 0:
             raise RuntimeError(
@@ -130,6 +143,18 @@ class BenchmarkOrchestrator:
             if r.returncode != 0 and "SyntaxError" in r.stderr:
                 raise RuntimeError(f"Syntax error in target repo {f}:\n{r.stderr}")
         self.logger.info("Target repo setup verified OK.")
+
+        # Capture SHA
+        try:
+            sha_result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo_path, capture_output=True, text=True, timeout=10
+            )
+            if sha_result.returncode == 0:
+                sha = sha_result.stdout.strip()
+                self.logger.info("Target repo commit SHA: %s", sha)
+        except Exception:
+            pass
 
     def _run_preflight(self, selected_ids: list[str] | None = None) -> None:
         """Run pre-flight checks; raises PreflightError if any critical check fails."""
@@ -159,12 +184,14 @@ class BenchmarkOrchestrator:
         """Return McpServerConfig instances for any MCP-backed tools in config."""
         return [self._MCP_TOOL_REGISTRY[t] for t in config.tools if t in self._MCP_TOOL_REGISTRY]
 
-    def _preingest_rag_tools(self, tools: list, config_id: str) -> None:
+    def _preingest_rag_tools(self, tools: list, config_id: str) -> float:
         """Pre-build RAG index on the actual tool instances the runner will use.
 
         Calling ingest() here (before AgnoRunner.run) ensures index-build time is
-        excluded from the agent's measured duration_sec.
+        excluded from the agent's measured duration_sec. Returns total elapsed seconds
+        so the caller can forward it to the runner as warmup_sec.
         """
+        elapsed = 0.0
         for tool in tools:
             if not hasattr(tool, "ingest"):
                 continue
@@ -172,9 +199,12 @@ class BenchmarkOrchestrator:
             t0 = time.time()
             try:
                 stats = tool.ingest()
-                self.logger.info("[%s] %s done in %.1fs: %s", config_id, tool.name, time.time() - t0, stats)
+                dt = time.time() - t0
+                elapsed += dt
+                self.logger.info("[%s] %s done in %.1fs: %s", config_id, tool.name, dt, stats)
             except Exception as e:
                 self.logger.warning("[%s] Pre-ingestion failed for %s: %s", config_id, tool.name, e)
+        return elapsed
 
     def _inject_serena_project_config(self, worktree_path: str) -> None:
         """Write a minimal .serena/project.yml via SerenaValidator.configure()."""
@@ -214,8 +244,9 @@ class BenchmarkOrchestrator:
             if "serena" in config.tools:
                 self._inject_serena_project_config(worktree_path)
             tools = self._get_tools_for_config(config, worktree_path)
+            preingest_sec = 0.0
             if not self.dry_run:
-                self._preingest_rag_tools(tools, config.id)
+                preingest_sec = self._preingest_rag_tools(tools, config.id)
             mcp_configs = self._get_mcp_configs_for_config(config)
 
             runner = AgnoRunner(
@@ -228,11 +259,20 @@ class BenchmarkOrchestrator:
                 baseline_pass_count=baseline_pass_count,
                 max_iterations=self.max_iterations,
                 required_files=self.required_files,
+                max_config_cost_usd=self.cost_guard.max_config_usd,
+                seed=self.provider_config.seed,
             )
 
             prefix = build_tool_restriction_prefix(config)
-            full_task = (prefix + task_description) if prefix else task_description
-            run_metrics = runner.run(full_task, worktree_path=worktree_path, test_cmd=self.test_cmd, log_path=log_path)
+            # Pass prefix as system_prefix to AgnoRunner.run()
+            run_metrics = runner.run(
+                task_description,
+                worktree_path=worktree_path,
+                test_cmd=self.test_cmd,
+                log_path=log_path,
+                system_prefix=prefix or "",
+                preingest_sec=preingest_sec,
+            )
 
             # Wire cost/token exceeded flags into metrics
             flags = self.cost_guard.record(config.id, run_metrics.cost_usd, run_metrics.total_tokens)
@@ -241,49 +281,50 @@ class BenchmarkOrchestrator:
                 "token_exceeded": flags["token_exceeded"],
             })
 
-            # LLM Judge Evaluation
+            # LLM Judge Evaluation (skipped in dry-run)
             messages_data: list[dict] = []
-            try:
-                if os.path.exists(log_path):
-                    with open(log_path, encoding="utf-8") as f:
-                        messages_data = json.load(f)
+            if not self.dry_run:
+                try:
+                    if os.path.exists(log_path):
+                        with open(log_path, encoding="utf-8") as f:
+                            messages_data = json.load(f)
 
-                patch_path = os.path.join(run_dir, "final.patch")
-                patch_content = None
-                if os.path.exists(patch_path):
-                    with open(patch_path, encoding="utf-8") as f:
-                        patch_content = f.read()
+                    patch_path = os.path.join(run_dir, "final.patch")
+                    patch_content = None
+                    if os.path.exists(patch_path):
+                        with open(patch_path, encoding="utf-8") as f:
+                            patch_content = f.read()
 
-                judge = LLMJudge()
-                report = judge.evaluate(
-                    task_description=full_task,
-                    agent_messages=messages_data,
-                    patch=patch_content,
-                    config_tools=config.tools,
-                    tests_passed=run_metrics.tests_passed,
-                    tests_total=run_metrics.tests_passed + run_metrics.errors,
-                    success=run_metrics.success,
-                    execution_result=run_metrics.execution_result,
-                )
-                run_metrics = run_metrics.model_copy(update={
-                    "task_solved_score": report.task_solved_score,
-                    "tool_correctness_score": report.tool_correctness_score,
-                    "context_quality_score": report.context_quality_score,
-                    "correctness_score": report.correctness_score,
-                    "minimality_score": report.minimality_score,
-                    "pattern_adherence_score": report.pattern_adherence_score,
-                    "tool_sequence_score": report.tool_sequence_score,
-                    "judge_reasoning_task": report.task_solved_reasoning,
-                    "judge_reasoning_tools": report.tool_correctness_reasoning,
-                    "judge_reasoning_context": report.context_quality_reasoning,
-                    "judge_reasoning_correctness": report.correctness_reasoning,
-                    "judge_reasoning_minimality": report.minimality_reasoning,
-                    "judge_reasoning_pattern": report.pattern_adherence_reasoning,
-                    "judge_reasoning_tool_sequence": report.tool_sequence_reasoning,
-                    "judge_model": report.judge_model,
-                })
-            except Exception as e:
-                self.logger.warning("LLM Judge failed for config %s: %s", config.id, e)
+                    judge = LLMJudge()
+                    report = judge.evaluate(
+                        task_description=(prefix + task_description) if prefix else task_description,
+                        agent_messages=messages_data,
+                        patch=patch_content,
+                        config_tools=config.tools,
+                        tests_passed=run_metrics.tests_passed,
+                        tests_total=run_metrics.tests_passed + run_metrics.errors,
+                        success=run_metrics.success,
+                        execution_result=run_metrics.execution_result,
+                    )
+                    run_metrics = run_metrics.model_copy(update={
+                        "task_solved_score": report.task_solved_score,
+                        "tool_correctness_score": report.tool_correctness_score,
+                        "context_quality_score": report.context_quality_score,
+                        "correctness_score": report.correctness_score,
+                        "minimality_score": report.minimality_score,
+                        "pattern_adherence_score": report.pattern_adherence_score,
+                        "tool_sequence_score": report.tool_sequence_score,
+                        "judge_reasoning_task": report.task_solved_reasoning,
+                        "judge_reasoning_tools": report.tool_correctness_reasoning,
+                        "judge_reasoning_context": report.context_quality_reasoning,
+                        "judge_reasoning_correctness": report.correctness_reasoning,
+                        "judge_reasoning_minimality": report.minimality_reasoning,
+                        "judge_reasoning_pattern": report.pattern_adherence_reasoning,
+                        "judge_reasoning_tool_sequence": report.tool_sequence_reasoning,
+                        "judge_model": report.judge_model,
+                    })
+                except Exception as e:
+                    self.logger.warning("LLM Judge failed for config %s: %s", config.id, e)
 
             # Retrieval precision/recall (computed, not judge-based)
             required = self.required_files
@@ -339,7 +380,7 @@ class BenchmarkOrchestrator:
         self._run_preflight(selected_ids=config_ids)
         if not self.dry_run:
             self._setup_target_repo(self.repo_path, self.test_cmd)
-        self.logger.info("Starting benchmark suite (Dry Run: %s).", self.dry_run)
+        self.logger.info("Starting benchmark suite (Dry Run: %s, Runs: %d).", self.dry_run, self.n_runs)
 
         configs = [c for c in self.tools_configs if c.id in config_ids] if config_ids else self.tools_configs
         if config_ids:
@@ -357,27 +398,71 @@ class BenchmarkOrchestrator:
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")
 
-        for config in configs:
-            try:
-                self.cost_guard.check_suite_budget(config.id)
-            except BudgetExceededError as e:
-                self.logger.error(str(e))
-                break
+        if self.n_runs > 1:
+            from src.features.multi_run import write_session_meta
+            session_id = timestamp
+            meta = {
+                "n_runs": self.n_runs,
+                "provider": self.provider_config.provider,
+                "model": self.provider_config.model,
+                "task": self.task_config.name,
+                "codebase": self.codebase_config.name,
+                "percentile": 75,
+                "start_time": timestamp,
+                "n_completed": 0,
+                "status": "running"
+            }
+            write_session_meta(self.results_dir, session_id, meta)
 
-            self.logger.info("Running config: %s (%s)", config.id, config.name)
-            self._run_single_config(config, f"run_{timestamp}_{config.id}", self.task_config.description, baseline_pass_count)
+            for rep in range(1, self.n_runs + 1):
+                self.logger.info("Starting Repetition %d/%d", rep, self.n_runs)
+                for config in configs:
+                    try:
+                        self.cost_guard.check_suite_budget(config.id)
+                    except BudgetExceededError as e:
+                        self.logger.error(str(e))
+                        break
 
-        self.logger.info("Benchmark suite completed.")
-        rankings = self.aggregator.generate_rankings()
-        self.logger.info("Rankings generated:\n%s", rankings)
+                    run_id = f"run_{session_id}_r{rep:03d}_{config.id}"
+                    self.logger.info("Running config: %s (%s) [Rep %d]", config.id, config.name, rep)
+                    self._run_single_config(config, run_id, self.task_config.description, baseline_pass_count)
+                    
+                    if not self.dry_run:
+                        self.logger.info("Sleeping 5s...")
+                        time.sleep(5)
+                
+                meta["n_completed"] = rep
+                write_session_meta(self.results_dir, session_id, meta)
+            
+            meta["status"] = "complete"
+            meta["end_time"] = time.strftime("%Y%m%d_%H%M%S")
+            write_session_meta(self.results_dir, session_id, meta)
+            
+            self.logger.info("Multi-run benchmark suite completed.")
+            rankings = self.aggregator.generate_session_rankings(session_id)
+            self.logger.info("Session Rankings generated:\n%s", rankings)
+        else:
+            # Original behavior
+            for config in configs:
+                try:
+                    self.cost_guard.check_suite_budget(config.id)
+                except BudgetExceededError as e:
+                    self.logger.error(str(e))
+                    break
+
+                self.logger.info("Running config: %s (%s)", config.id, config.name)
+                self._run_single_config(config, f"run_{timestamp}_{config.id}", self.task_config.description, baseline_pass_count)
+                
+                if not self.dry_run:
+                    self.logger.info("Sleeping 5s...")
+                    time.sleep(5)
+
+            self.logger.info("Benchmark suite completed.")
+            rankings = self.aggregator.generate_rankings()
+            self.logger.info("Rankings generated:\n%s", rankings)
 
         # Generate HTML Dashboard
         try:
-            total_configs = len(self.tools_configs)
-            find_last_full_run_timestamp(self.results_dir, total_configs)
-
-            # If this run wasn't full, or we want to reflect it's an update
-            # The plan says use current run_timestamp as filename
             out_path = os.path.join(self.results_dir, f"dashboard_{timestamp}.html")
             generate_dashboard(self.results_dir, out_path)
             self.logger.info("Dashboard generated: %s", out_path)
@@ -450,6 +535,10 @@ class BenchmarkOrchestrator:
 
             self.logger.info("Retrying config: %s (%s)", config.id, config.name)
             self._run_single_config(config, f"run_{run_timestamp}_{config.id}", self.task_config.description, baseline_pass_count)
+
+            if not self.dry_run:
+                self.logger.info("Sleeping 5s...")
+                time.sleep(5)
 
         self.logger.info("Retry run complete.")
         rankings = self.aggregator.generate_rankings()

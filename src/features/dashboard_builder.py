@@ -139,7 +139,11 @@ def find_last_full_run_timestamp(results_dir: str, total_configs: int) -> str | 
         parts = os.path.basename(os.path.dirname(r)).split("_")
         if len(parts) >= 4:
             ts = f"{parts[1]}_{parts[2]}"
-            ts_groups.setdefault(ts, set()).add(parts[3])
+            # Skip repetition infix if present
+            cfg_idx = 3
+            if parts[3].startswith("r") and len(parts[3]) == 4 and parts[3][1:].isdigit():
+                cfg_idx = 4
+            ts_groups.setdefault(ts, set()).add(parts[cfg_idx])
     for ts in sorted(ts_groups.keys(), reverse=True):
         if len(ts_groups[ts]) >= total_configs:
             return ts
@@ -151,10 +155,25 @@ def load_latest_per_config(results_dir: str) -> dict[str, dict[str, Any]]:
     runs = glob.glob(os.path.join(results_dir, "run_*", "metrics.json"))
     latest: dict[str, tuple] = {}
     for r in runs:
-        parts = os.path.basename(os.path.dirname(r)).split("_")
+        folder_name = os.path.basename(os.path.dirname(r))
+        parts = folder_name.split("_")
         if len(parts) >= 4:
             ts = f"{parts[1]}_{parts[2]}"
-            cid, cname = parts[3], "_".join(parts[4:])
+            
+            # Identify repetition if present
+            rep_idx = -1
+            for i, p in enumerate(parts):
+                if p.startswith("r") and len(p) == 4 and p[1:].isdigit():
+                    rep_idx = i
+                    break
+            
+            if rep_idx != -1:
+                cid = parts[rep_idx+1]
+                cname = "_".join(parts[rep_idx+1:])
+            else:
+                cid = parts[3]
+                cname = "_".join(parts[3:])
+
             try:
                 with open(r, encoding="utf-8") as f:
                     m = json.load(f)

@@ -16,6 +16,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import yaml
+from src.features.multi_run import list_sessions, aggregate_session
 
 # ── Project root (absolute, independent of CWD) ───────────────────────────────
 _ROOT = Path(__file__).parent
@@ -279,12 +280,28 @@ def load_data() -> pd.DataFrame:
         try:
             with open(f, "r", encoding="utf-8") as fh:
                 d = json.load(fh)
-            parts = os.path.basename(os.path.dirname(f)).split("_")
-            d["timestamp"]      = f"{parts[1]}_{parts[2]}" if len(parts) >= 4 else "unknown"
-            d["config_id_full"] = "_".join(parts[3:])      if len(parts) >= 4 else "unknown"
-            patch = _ROOT / "results" / os.path.basename(os.path.dirname(f)) / "final.patch"
+            folder_name = os.path.basename(os.path.dirname(f))
+            parts = folder_name.split("_")
+            # run_{ts_date}_{ts_time}_{rest}
+            d["timestamp"] = f"{parts[1]}_{parts[2]}" if len(parts) >= 3 else "unknown"
+            
+            # Identify repetition if present
+            rep_idx = -1
+            for i, p in enumerate(parts):
+                if p.startswith("r") and len(p) == 4 and p[1:].isdigit():
+                    rep_idx = i
+                    break
+            
+            if rep_idx != -1:
+                d["config_id_full"] = "_".join(parts[rep_idx+1:])
+                d["repetition"] = parts[rep_idx]
+            else:
+                d["config_id_full"] = "_".join(parts[3:])
+                d["repetition"] = "r001"
+
+            patch = _ROOT / "results" / folder_name / "final.patch"
             d["final_patch"] = patch.read_text(encoding="utf-8") if patch.exists() else ""
-            msgs = _ROOT / "results" / os.path.basename(os.path.dirname(f)) / "agent_messages.json"
+            msgs = _ROOT / "results" / folder_name / "agent_messages.json"
             d["agent_messages"] = json.loads(msgs.read_text(encoding="utf-8")) if msgs.exists() else []
             rows.append(d)
         except Exception:
@@ -351,12 +368,56 @@ if df.empty:
     st.warning(_t("no_data_run"))
     st.stop()
 
-timestamps  = sorted(df["timestamp"].unique(), reverse=True)
-selected_ts = st.sidebar.selectbox(_t("run_timestamp"), timestamps)
+# Session detection
+all_sessions = list_sessions(str(_ROOT / "results"))
+session_options = []
+session_map = {}
+
+for s in all_sessions:
+    label = s["session_id"]
+    if not s.get("is_pseudo") and s.get("n_runs", 1) > 1:
+        label = f"📊 {s['session_id']} ({s['n_runs']} runs)"
+    session_options.append(label)
+    session_map[label] = s
+
+selected_label = st.sidebar.selectbox(_t("run_timestamp"), session_options)
+selected_session = session_map[selected_label]
+selected_ts = selected_session["session_id"]
+is_multi_run = not selected_session.get("is_pseudo") and selected_session.get("n_runs", 1) > 1
+
 filter_mode = st.sidebar.radio(_t("status_label"),
                                [_t("status_all"), _t("status_pass"), _t("status_fail")])
 
-fdf = df[df["timestamp"] == selected_ts].copy()
+# Data aggregation
+fdf_raw = df[df["timestamp"] == selected_ts].copy()
+
+if is_multi_run:
+    st.sidebar.info(f"📊 {selected_session.get('n_runs')} runs · p75 aggregation")
+    # Aggregate data
+    agg = aggregate_session(str(_ROOT / "results"), selected_ts, percentile=75)
+    rows = []
+    for config_id, stats in agg.items():
+        row = {k: v for k, v in stats.items() if k != "metadata"}
+        row["config_id_full"] = config_id
+        row["timestamp"] = selected_ts
+        row["n_runs_total"] = selected_session.get("n_runs", 1)
+        row["n_runs_completed"] = stats["metadata"].get("n", 0)
+        
+        # Recover non-numeric fields from fdf_raw
+        orig_matches = fdf_raw[fdf_raw["config_id_full"] == config_id]
+        if not orig_matches.empty:
+            for col in ["archetype", "model_name", "judge_model"]:
+                if col in orig_matches.columns:
+                    row[col] = orig_matches.iloc[0][col]
+            # Take agent_messages and final_patch from the first repetition if available
+            row["agent_messages"] = orig_matches.iloc[0]["agent_messages"]
+            row["final_patch"] = orig_matches.iloc[0]["final_patch"]
+        
+        rows.append(row)
+    fdf = pd.DataFrame(rows)
+else:
+    fdf = fdf_raw
+
 if filter_mode == _t("status_pass"): fdf = fdf[fdf["success"] == True]
 if filter_mode == _t("status_fail"): fdf = fdf[fdf["success"] == False]
 
@@ -379,19 +440,49 @@ st.sidebar.metric(_t("pass_rate"), f"{fdf['success'].mean()*100:.0f}%" if len(fd
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab1:
     st.header(f"{_t('leaderboard_header')} — {selected_ts}")
+    if is_multi_run:
+        st.caption(f"Showing p75 across {selected_session.get('n_runs')} runs (session {selected_ts})")
+    
     if fdf.empty:
         st.info(_t("no_data"))
     else:
-        lb = fdf[[
+        cols_to_use = [
             "config_id_full", "success", "eval_score", "total_tokens", "cost_usd",
             "success_per_token", "time_to_target", "context_waste_ratio", "agent_cycles",
-        ]].copy()
-        lb["context_waste_ratio"] = lb["context_waste_ratio"].apply(lambda x: f"{x*100:.1f}%")
-        lb.columns = [
-            _t("col_config"), _t("col_pass"), _t("col_eval"),
-            _t("col_tokens"), _t("col_cost"), _t("col_spt"),
-            _t("col_ttt"), _t("col_waste"), _t("col_cycles"),
         ]
+        if is_multi_run:
+            cols_to_use.append("n_runs_completed")
+            cols_to_use.append("success_rate")
+
+        lb = fdf[cols_to_use].copy()
+        
+        if is_multi_run:
+            lb["Succ/N"] = lb.apply(lambda r: f"{int(round(r['success_rate'] * r['n_runs_completed']))}/{int(r['n_runs_completed'])}", axis=1)
+            # Reorder columns to put Succ/N after success
+            cols = lb.columns.tolist()
+            # Find success column index
+            idx = cols.index("success")
+            # Move Succ/N to idx + 1
+            succ_n = cols.pop(cols.index("Succ/N"))
+            cols.insert(idx + 1, succ_n)
+            lb = lb[cols]
+
+        lb["context_waste_ratio"] = lb["context_waste_ratio"].apply(lambda x: f"{float(x)*100:.1f}%")
+        
+        # Mapping column names
+        col_map = {
+            "config_id_full": _t("col_config"),
+            "success": _t("col_pass"),
+            "eval_score": _t("col_eval"),
+            "total_tokens": _t("col_tokens"),
+            "cost_usd": _t("col_cost"),
+            "success_per_token": _t("col_spt"),
+            "time_to_target": _t("col_ttt"),
+            "context_waste_ratio": _t("col_waste"),
+            "agent_cycles": _t("col_cycles"),
+        }
+        lb.rename(columns=col_map, inplace=True)
+        
         st.dataframe(lb.sort_values(_t("col_eval"), ascending=False), use_container_width=True)
 
 
@@ -400,7 +491,10 @@ with tab1:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab2:
     st.header(_t("explorer_header"))
-    st.caption(_t("explorer_caption", ts=selected_ts, n=len(fdf)))
+    if is_multi_run:
+        st.caption(f"Showing p75 across {selected_session.get('n_runs')} runs (session {selected_ts}) — {len(fdf)} configs")
+    else:
+        st.caption(_t("explorer_caption", ts=selected_ts, n=len(fdf)))
     c1, c2 = st.columns(2)
     sort_by  = c1.selectbox(_t("sort_by"), ["eval_score","total_tokens","cost_usd","duration_sec","success"], key="ex_s")
     sort_asc = c2.checkbox(_t("ascending"), False, key="ex_a")
@@ -423,20 +517,20 @@ with tab2:
         ok   = row.get("success", False)
         icon = "✅" if ok else "❌"
         hdr  = (f"{icon} **{row['config_id_full']}** — "
-                f"eval={row.get('eval_score',0):.2f} | "
-                f"tokens={int(row.get('total_tokens',0)):,} | "
-                f"${row.get('cost_usd',0):.4f}")
+                f"eval={float(row.get('eval_score',0)):.2f} | "
+                f"tokens={int(float(row.get('total_tokens',0))):,} | "
+                f"${float(row.get('cost_usd',0)):.4f}")
         with st.expander(hdr, expanded=False):
             cols = st.columns(4)
-            cols[0].metric(_t("metric_eval"),      f"{row.get('eval_score',0):.3f}")
-            cols[1].metric(_t("metric_tokens"),    f"{int(row.get('total_tokens',0)):,}")
-            cols[2].metric(_t("metric_cost"),      f"${row.get('cost_usd',0):.4f}")
-            cols[3].metric(_t("metric_duration"),  f"{row.get('duration_sec',0):.1f}s")
+            cols[0].metric(_t("metric_eval"),      f"{float(row.get('eval_score',0)):.3f}")
+            cols[1].metric(_t("metric_tokens"),    f"{int(float(row.get('total_tokens',0))):,}")
+            cols[2].metric(_t("metric_cost"),      f"${float(row.get('cost_usd',0)):.4f}")
+            cols[3].metric(_t("metric_duration"),  f"{float(row.get('duration_sec',0)):.1f}s")
             cols2 = st.columns(4)
-            cols2[0].metric(_t("metric_cycles"),      row.get("agent_cycles", 0))
-            cols2[1].metric(_t("metric_tool_calls"),  row.get("tool_calls", 0))
-            cols2[2].metric(_t("metric_ttt"),         row.get("time_to_target", 0))
-            cols2[3].metric(_t("metric_waste"),       f"{row.get('context_waste_ratio',0)*100:.1f}%")
+            cols2[0].metric(_t("metric_cycles"),      int(float(row.get("agent_cycles", 0))))
+            cols2[1].metric(_t("metric_tool_calls"),  int(float(row.get("tool_calls", 0))))
+            cols2[2].metric(_t("metric_ttt"),         int(float(row.get("time_to_target", 0))))
+            cols2[3].metric(_t("metric_waste"),       f"{float(row.get('context_waste_ratio',0))*100:.1f}%")
             st.markdown(f"**{_t('judge_scores')}**")
             jc = st.columns(7)
             for i, (lbl, fld) in enumerate(_JUDGE_F):
@@ -791,7 +885,7 @@ with tab8:
     else:
         ALL_COLS = [
             "config_id_full","archetype","model_name",
-            "success","made_changes","execution_result",
+            "success","success_rate","n_runs_completed","made_changes","execution_result",
             "eval_score","task_solved_score","correctness_score","tool_correctness_score",
             "context_quality_score","minimality_score","pattern_adherence_score","tool_sequence_score",
             "success_per_token","retrieval_precision","retrieval_recall",
