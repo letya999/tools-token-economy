@@ -123,7 +123,24 @@ class AgnoRunner:
         return agno_tools_list
 
     def _build_budget_pre_hook(self, max_cost_usd: float = 0.50):
-        """Returns a pre_hook that raises BudgetExceededError if estimated cost exceeds max_cost_usd."""
+        """Returns a pre_hook that enforces a hard model-call limit per run.
+
+        Two guards:
+        1. Hard step limit (primary) — reliable, no estimation needed. Fires after
+           MAX_MODEL_CALLS model calls regardless of cost. Prevents context explosion
+           on configs that keep calling with growing context (e.g. claude_code_like).
+        2. Chars/4 cost estimate (secondary) — catches cases where a few calls are
+           very expensive. Note: run_context.messages does not include the system
+           prompt, so this guard underestimates; the hard limit is the real gate.
+
+        Must raise InputCheckError — agno's execute_pre_hooks re-raises only
+        InputCheckError/OutputCheckError; any other Exception is swallowed silently.
+        """
+        # At 15 model calls, worst-case observed config (claude_code_like) stays
+        # at ~15/23 * $0.54 = $0.35, safely under the $0.40 per-config budget.
+        MAX_MODEL_CALLS = 15
+        call_count = [0]
+
         pricing = {
             "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
             "openai/gpt-4.1-mini": {"input": 0.40, "output": 1.60},
@@ -135,8 +152,16 @@ class AgnoRunner:
         p = pricing.get(self.config.model, pricing.get("openai/gpt-4.1-mini"))
 
         def budget_hook(**kwargs):
-            # agno passes run_context which has .messages = live conversation message list.
-            # agent.memory is user-memory storage, NOT the conversation — don't use it.
+            # Guard 1: hard model-call counter
+            call_count[0] += 1
+            if call_count[0] > MAX_MODEL_CALLS:
+                _log.warning("Budget pre-hook: hard model-call limit %d reached", MAX_MODEL_CALLS)
+                raise InputCheckError(
+                    f"Hard model-call limit of {MAX_MODEL_CALLS} exceeded — aborting to stay within budget"
+                )
+
+            # Guard 2: chars/4 estimate from conversation messages (underestimates
+            # because system prompt is not in run_context.messages)
             run_context = kwargs.get('run_context')
             if run_context is None:
                 return
@@ -157,22 +182,18 @@ class AgnoRunner:
                             total_chars += len(str(item.get('text', '') or ''))
                         else:
                             total_chars += len(str(item))
-                # count tool_calls payload too
                 for tc in (getattr(m, 'tool_calls', None) or []):
                     total_chars += len(str(tc))
 
             estimated_tokens = total_chars // 4
             estimated_cost = (estimated_tokens / 1_000_000) * p["input"]
-
             if estimated_cost > max_cost_usd:
                 _log.warning("Budget pre-hook: estimated cost $%.4f exceeds limit $%.2f", estimated_cost, max_cost_usd)
-                # Must raise InputCheckError — agno's execute_pre_hooks only re-raises
-                # InputCheckError/OutputCheckError; any other Exception is swallowed.
                 raise InputCheckError(
                     f"Pre-hook aborted: estimated input cost ${estimated_cost:.4f} "
                     f"exceeds per-config limit ${max_cost_usd:.2f}"
                 )
-        
+
         return budget_hook
 
     def _build_agent(self, model_id: str, tools: list, system_prefix: str = "") -> Agent:
