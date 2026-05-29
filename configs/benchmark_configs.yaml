@@ -2,11 +2,13 @@ benchmark:
   repo: "C:\\Users\\User\\a_projects\\process_metrics_platform_v2"
   test_cmd: "uv run --extra dev pytest tests/unit/ -q"
   timeout_sec: 1200
-  target_file: "tests/unit/test_api_google_oauth.py"
-  target_test: "tests/unit/test_api_google_oauth.py"
+  target_file: "tests/unit/test_dagster_client.py"
+  target_test: "tests/unit/test_api_admin_unit.py"
   required_files:
-    - "tests/unit/test_api_google_oauth.py"
-    - "src/api/google_oauth.py"
+    - "app/services/dagster_client.py"
+    - "app/api/admin.py"
+    - "tests/unit/test_dagster_client.py"
+    - "tests/unit/test_api_admin_unit.py"
   task: >
     Implement a system-wide execution timeout for all background data processing 
     operations (specifically Jira synchronization and metrics recalculation jobs). 
