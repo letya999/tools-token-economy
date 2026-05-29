@@ -133,23 +133,36 @@ class AgnoRunner:
         }
         p = pricing.get(self.config.model, pricing.get("openai/gpt-4.1-mini"))
 
-        def budget_hook(agent_instance):
-            # Estimate input tokens from all messages in current context
-            messages = getattr(agent_instance, 'memory', None)
-            if messages is None:
+        def budget_hook(**kwargs):
+            # agno passes run_context which has .messages = live conversation message list.
+            # agent.memory is user-memory storage, NOT the conversation — don't use it.
+            run_context = kwargs.get('run_context')
+            if run_context is None:
                 return
-            
-            msg_list = []
-            if hasattr(messages, 'messages'):
-                msg_list = messages.messages or []
-            elif isinstance(messages, list):
-                msg_list = messages
-            
-            total_chars = sum(len(str(getattr(m, 'content', '') or '')) for m in msg_list)
-            # Add tool output tokens if currently in a tool turn
+            msg_list = getattr(run_context, 'messages', None) or []
+            if not msg_list:
+                return
+
+            total_chars = 0
+            for m in msg_list:
+                content = getattr(m, 'content', None)
+                if isinstance(content, str):
+                    total_chars += len(content)
+                elif isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, str):
+                            total_chars += len(item)
+                        elif isinstance(item, dict):
+                            total_chars += len(str(item.get('text', '') or ''))
+                        else:
+                            total_chars += len(str(item))
+                # count tool_calls payload too
+                for tc in (getattr(m, 'tool_calls', None) or []):
+                    total_chars += len(str(tc))
+
             estimated_tokens = total_chars // 4
             estimated_cost = (estimated_tokens / 1_000_000) * p["input"]
-            
+
             if estimated_cost > max_cost_usd:
                 _log.warning("Budget pre-hook: estimated cost $%.4f exceeds limit $%.2f", estimated_cost, max_cost_usd)
                 raise BudgetExceededError(
@@ -345,12 +358,12 @@ class AgnoRunner:
                 metrics_data["files_read"] += 1
                 tok = self._count_tokens(res_str)
                 total_read_tok += tok
-                args = getattr(tool_exec, "input", {}) or {}
+                args = tool_exec.tool_args or {}
                 file_arg = (
                     args.get("path") or args.get("file_path") or
                     args.get("query") or args.get("pattern") or ""
                 )
-                if self.required_files and any(
+                if file_arg and self.required_files and any(
                     req in file_arg or file_arg in req
                     for req in self.required_files
                 ):
