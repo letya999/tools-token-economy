@@ -375,6 +375,53 @@ class BenchmarkOrchestrator:
             if worktree_path:
                 self.isolation.teardown(run_id)
 
+    def _find_retry_session(self, config_ids: list[str], max_age_minutes: int = 120) -> str | None:
+        """Return the most recent session timestamp if ALL config_ids failed there within max_age_minutes.
+
+        When found, the caller reuses this timestamp so new results overwrite the failed run dirs
+        instead of creating a new session directory tree.
+        """
+        if not config_ids or not os.path.isdir(self.results_dir):
+            return None
+
+        ts_pattern = re.compile(r"^run_(\d{8}_\d{6})_(.+)$")
+        sessions: dict[str, list[str]] = {}
+        for entry in os.scandir(self.results_dir):
+            if not entry.is_dir():
+                continue
+            m = ts_pattern.match(entry.name)
+            if m:
+                sessions.setdefault(m.group(1), []).append(m.group(2))
+
+        if not sessions:
+            return None
+
+        latest_ts = max(sessions.keys())
+        try:
+            from datetime import datetime
+            age_min = (datetime.now() - datetime.strptime(latest_ts, "%Y%m%d_%H%M%S")).total_seconds() / 60
+            if age_min > max_age_minutes:
+                return None
+        except ValueError:
+            return None
+
+        for cfg_id in config_ids:
+            metrics_file = os.path.join(self.results_dir, f"run_{latest_ts}_{cfg_id}", "metrics.json")
+            if not os.path.exists(metrics_file):
+                return None
+            try:
+                with open(metrics_file) as f:
+                    if json.load(f).get("success", False):
+                        return None  # config passed — do not overwrite
+            except Exception:
+                return None
+
+        self.logger.info(
+            "Retry mode: reusing session %s — all %d requested configs failed there (age %.1f min)",
+            latest_ts, len(config_ids), age_min,
+        )
+        return latest_ts
+
     def run_suite(self, config_ids: list[str] | None = None):
         """Runs configurations sequentially. Pass config_ids to run a subset."""
         self._run_preflight(selected_ids=config_ids)
@@ -396,7 +443,11 @@ class BenchmarkOrchestrator:
                 )
         self.logger.info("Baseline: %d tests passing.", baseline_pass_count)
 
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        # Retry mode: reuse the most recent session timestamp if all requested
+        # config_ids failed there within the last 2 hours, so new results
+        # overwrite the failed dirs instead of creating a new session tree.
+        _retry_ts = self._find_retry_session(config_ids or [], max_age_minutes=120) if config_ids and self.n_runs == 1 else None
+        timestamp = _retry_ts or time.strftime("%Y%m%d_%H%M%S")
 
         if self.n_runs > 1:
             from src.features.multi_run import write_session_meta
