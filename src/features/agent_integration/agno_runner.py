@@ -369,7 +369,7 @@ class AgnoRunner:
             _log.warning("Validation failed (%s). Stdout:\n%s\nStderr:\n%s",
                          res.method_used, res.stdout[-500:], res.stderr[-500:])
 
-        return success, res.tests_passed, res.tests_failed, patch_lines, res.outcome, made_changes, res.stderr
+        return success, res.tests_passed, res.tests_failed, patch_lines, res.outcome, made_changes, res.stderr, res.stdout
 
     def _extract_metrics_from_response(
         self,
@@ -601,7 +601,7 @@ class AgnoRunner:
                         agentbudget.init(
                             self.max_config_cost_usd,
                             soft_limit=0.9,
-                            max_repeated_calls=15,
+                            max_repeated_calls=100,
                         )
                         _ab_active = True
                     except Exception as _abe:
@@ -624,7 +624,7 @@ class AgnoRunner:
             metrics_data = self._extract_metrics_from_response(response, task_description, log_path)
 
             if worktree_path and os.path.isdir(worktree_path):
-                success, tests_passed, tests_failed, patch_lines, exec_result, made_changes, test_stderr = self._validate_run(worktree_path, test_cmd)
+                success, tests_passed, tests_failed, patch_lines, exec_result, made_changes, test_stderr, test_stdout = self._validate_run(worktree_path, test_cmd)
                 metrics_data["tests_passed"] = tests_passed
                 metrics_data["patch_lines"] = patch_lines
                 metrics_data["errors"] = tests_failed
@@ -632,6 +632,7 @@ class AgnoRunner:
                     metrics_data["execution_result"] = exec_result
                 metrics_data["made_changes"] = made_changes
                 metrics_data["test_stderr"] = test_stderr[-500:] if test_stderr else ""
+                metrics_data["test_stdout"] = test_stdout[-1000:] if test_stdout else ""
             else:
                 content_str = (
                     response.get_content_as_string()
@@ -751,7 +752,7 @@ class AgnoRunner:
             metrics_data = self._extract_metrics_from_response(response, task_description, log_path)
 
             if worktree_path and os.path.isdir(worktree_path):
-                success, tests_passed, tests_failed, patch_lines, exec_result, made_changes, test_stderr = self._validate_run(worktree_path, test_cmd)
+                success, tests_passed, tests_failed, patch_lines, exec_result, made_changes, test_stderr, test_stdout = self._validate_run(worktree_path, test_cmd)
                 metrics_data["tests_passed"] = tests_passed
                 metrics_data["patch_lines"] = patch_lines
                 metrics_data["errors"] = tests_failed
@@ -759,6 +760,7 @@ class AgnoRunner:
                     metrics_data["execution_result"] = exec_result
                 metrics_data["made_changes"] = made_changes
                 metrics_data["test_stderr"] = test_stderr[-500:] if test_stderr else ""
+                metrics_data["test_stdout"] = test_stdout[-1000:] if test_stdout else ""
             else:
                 content_str = (
                     response.get_content_as_string()

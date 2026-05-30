@@ -121,6 +121,7 @@ class RunMetrics(BaseModel):
     test_stderr: str = ""
     tool_output_tokens_total: int = 0
     tool_schema_bytes: int = 0
+    test_stdout: str = ""
 
     @computed_field
     @property

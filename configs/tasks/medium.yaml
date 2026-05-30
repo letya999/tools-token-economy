@@ -1,28 +1,14 @@
 difficulty: medium
 name: "Case-insensitive Bearer token prefix"
 description: |
-  The function `parse_bearer_token` in `app/services/admin_auth.py` extracts
-  the token value from an HTTP Authorization header. It currently requires
-  an exact "Bearer " prefix (capital B). Per RFC 6750 §2.1 the scheme name
-  MUST be matched case-insensitively, so headers like "bearer abc" or
-  "BEARER abc" should also be accepted.
+  Our API rejects Authorization headers with a lowercase or mixed-case
+  Bearer prefix, e.g. "bearer <token>" or "BEARER <token>".
+  RFC 6750 §2.1 says the scheme name MUST be matched case-insensitively,
+  so those headers are valid and we have a bug.
 
-  1. Locate the `parse_bearer_token` function in `app/services/admin_auth.py`.
-  2. Modify it so the prefix is matched case-insensitively while preserving
-     ALL existing behaviour:
-       - "Bearer abc"  -> "abc"   (unchanged)
-       - "bearer abc"  -> "abc"   (new, must work)
-       - "BEARER abc"  -> "abc"   (new, must work)
-       - "Token abc"   -> None    (unchanged, wrong scheme)
-       - None or empty -> None    (unchanged)
-       - "Bearer   "   -> None    (unchanged, only whitespace after prefix)
-  3. Add ONE new test in `tests/unit/test_admin_auth.py` named
-     `test_parse_bearer_token_case_insensitive` that asserts the lowercase
-     case works. Do NOT modify or remove the existing
-     `test_parse_bearer_token` test.
-
-  Use your retrieval tools to locate the function. Save changes with any
-  write tool (edit, write, patch, or insert_after) and output: TASK_COMPLETE.
+  Fix the bug and add a regression test for the lowercase case.
+  The new test must be added at the END of the existing test file —
+  do NOT insert it inside another function's body.
 test_cmd: "uv run --extra dev pytest tests/unit/test_admin_auth.py -q"
 timeout_sec: 600
 target_file: "tests/unit/test_admin_auth.py"
@@ -30,5 +16,5 @@ required_files:
   - "app/services/admin_auth.py"
   - "tests/unit/test_admin_auth.py"
 success_criteria:
-  - "test_parse_bearer_token_case_insensitive passes"
-  - "All pre-existing tests in test_admin_auth.py continue to pass"
+  - "parse_bearer_token handles case-insensitive Bearer prefix"
+  - "All pre-existing tests pass"
