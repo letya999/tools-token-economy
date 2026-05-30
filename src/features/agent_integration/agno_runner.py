@@ -285,12 +285,19 @@ class AgnoRunner:
         instructions.extend([
             "You are a coding agent. Complete the task using only the tools provided.",
             "Always use RELATIVE file paths (relative to the repository root) when calling file tools. Never use absolute paths.",
-            "MANDATORY: You MUST call at least one file-modification tool (write, edit, patch, or insert_after) to save your code changes to disk before saying TASK_COMPLETE. Reading files and thinking about changes is not enough - you must persist changes with a tool call.",
-            "Workflow: (1) Use retrieval tools to understand the codebase. (2) Save your changes using edit (modify specific section - preferred for existing files), write (full file replacement - only when creating new files or replacing entirely), patch (unified diff), or insert_after (add new code after anchor). (3) Verify by reading the file back. (4) Output exactly: TASK_COMPLETE",
-            "If a tool returns an error, try a different approach - do not repeat the exact same tool call.",
-            "Never output TASK_COMPLETE if you have not called at least one of: write, edit, patch, insert_after.",
+            "MANDATORY: You MUST call at least one file-modification tool to save your code changes to disk before saying TASK_COMPLETE.",
+            (
+                "Write tool guide — choose the right one:\n"
+                "  edit         — modify a specific section of an EXISTING file (preferred for changes to existing code)\n"
+                "  insert_after — append new code AFTER a complete function/class/block; the anchor must be the LAST LINE of the target symbol, not its def/class header\n"
+                "  patch        — apply a unified diff; use when you have a precise diff ready\n"
+                "  write        — replace the ENTIRE file; only for new files or when you need to rewrite >50% of the content\n"
+                "NEVER use insert_after with a function def/class header as anchor — it inserts inside the body. Always anchor to the last line of the symbol or the line just before where you want the new code."
+            ),
+            "Workflow: (1) Retrieve context. (2) Save changes with the appropriate tool above. (3) Verify by reading back. (4) Output exactly: TASK_COMPLETE",
+            "If a tool returns an error, try a different approach — do not repeat the exact same tool call.",
             "CRITICAL: NEVER delete, truncate, or overwrite existing code. When adding to an existing file, preserve ALL existing content.",
-            "CRITICAL: NEVER remove or replace existing tests. The test file already contains tests. You must ADD a new test without touching any existing test.",
+            "CRITICAL: NEVER remove or replace existing tests. You must ADD new tests at the END of the test file, after all existing tests.",
             "Read files in LARGE blocks (at least 100-200 lines per read call). Do NOT read the same file in small chunks of 20-30 lines.",
             "Efficiency: Use the shell tool's multi_cmd parameter to run multiple related commands in a single turn.",
         ])
