@@ -13,7 +13,10 @@ description: |
      initiate these background jobs and update them to comply with the
      new signature/logic.
   4. Ensure that all unit tests related to job triggering are updated
-     to reflect this change and continue to pass.
+     to reflect this change and continue to pass. IMPORTANT: search for
+     the modified function name in test files, find every mock or patch
+     that intercepts it, and update those mock call assertions to expect
+     the new parameters — otherwise tests will fail.
 
   You MUST use your retrieval tools to discover the relevant components.
   Finalize by saving changes with any write tool (edit, write, patch, or insert_after) and output: TASK_COMPLETE.
