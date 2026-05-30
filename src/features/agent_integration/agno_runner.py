@@ -608,7 +608,7 @@ class AgnoRunner:
                         agentbudget.init(
                             self.max_config_cost_usd,
                             soft_limit=0.9,
-                            max_repeated_calls=100,
+                            max_repeated_calls=20,
                         )
                         _ab_active = True
                     except Exception as _abe:
