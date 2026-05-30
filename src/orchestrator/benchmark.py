@@ -424,6 +424,9 @@ class BenchmarkOrchestrator:
 
     def run_suite(self, config_ids: list[str] | None = None):
         """Runs configurations sequentially. Pass config_ids to run a subset."""
+        # Normalise comma-separated IDs passed as a single string element.
+        if config_ids and len(config_ids) == 1 and "," in config_ids[0]:
+            config_ids = [s.strip() for s in config_ids[0].split(",") if s.strip()]
         self._run_preflight(selected_ids=config_ids)
         if not self.dry_run:
             self._setup_target_repo(self.repo_path, self.test_cmd)
