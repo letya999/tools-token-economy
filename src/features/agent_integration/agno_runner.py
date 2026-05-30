@@ -287,12 +287,14 @@ class AgnoRunner:
             "Always use RELATIVE file paths (relative to the repository root) when calling file tools. Never use absolute paths.",
             "MANDATORY: You MUST call at least one file-modification tool to save your code changes to disk before saying TASK_COMPLETE.",
             (
-                "Write tool guide — choose the right one:\n"
-                "  edit         — modify a specific section of an EXISTING file (preferred for changes to existing code)\n"
-                "  insert_after — append new code AFTER a complete function/class/block; the anchor must be the LAST LINE of the target symbol, not its def/class header\n"
-                "  patch        — apply a unified diff; use when you have a precise diff ready\n"
-                "  write        — replace the ENTIRE file; only for new files or when you need to rewrite >50% of the content\n"
-                "NEVER use insert_after with a function def/class header as anchor — it inserts inside the body. Always anchor to the last line of the symbol or the line just before where you want the new code."
+                "Write tool guide — choose the right tool for each job:\n"
+                "  edit         — str_replace: replace an EXACT substring in an existing file. Best for modifying existing code.\n"
+                "  insert       — line-number insert (SWE-agent style): read the file first to get line numbers, then call insert(file, line_number, new_code) to add code AFTER that line. Best for adding new functions/tests.\n"
+                "  append       — appends new_code to the very END of the file. Simplest way to add a new test or function — no line number or anchor needed.\n"
+                "  patch        — apply a unified diff. Use when you already have a precise diff.\n"
+                "  write        — rewrites the ENTIRE file. Only for new files or when >50% of content changes.\n"
+                "WORKFLOW for adding a new test: (1) read the test file, (2) use append(file, new_test_code) — it always adds at the end safely.\n"
+                "NEVER use insert_after with a function def line as anchor — it places code inside the body."
             ),
             "Workflow: (1) Retrieve context. (2) Save changes with the appropriate tool above. (3) Verify by reading back. (4) Output exactly: TASK_COMPLETE",
             "If a tool returns an error, try a different approach — do not repeat the exact same tool call.",

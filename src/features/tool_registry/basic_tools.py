@@ -203,13 +203,102 @@ class PatchApplierTool(BaseTool):
         else:
             return self.format_result(f"Error: Failed to apply patch.\n{error_detail}")
 
+class InsertAfterLineTool(BaseTool):
+    """SWE-agent style insert: inserts new_code AFTER the specified line number.
+    Read the file first to see line numbers, then insert after the correct line.
+    """
+    def __init__(self, worktree_path: str):
+        super().__init__(
+            "insert",
+            "Inserts new_code after the given line_number in file_path. "
+            "ALWAYS read the file first to see line numbers. "
+            "Use to add new functions/tests after a specific line. "
+            "Example: to add after the last line of a function at line 45, use line_number=45."
+        )
+        self.worktree_path = worktree_path
+
+    def execute(self, file_path: str, line_number: int, new_code: str) -> ToolResult:
+        full_path = self._safe_path(self.worktree_path, file_path)
+        if full_path is None:
+            raise PermissionError(f"Access denied: {file_path}")
+        if not os.path.isfile(full_path):
+            return self.format_result(f"Error: File not found: {file_path}")
+
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            n = len(lines)
+            if line_number < 0 or line_number > n:
+                return self.format_result(
+                    f"Error: line_number {line_number} out of range (file has {n} lines). "
+                    f"Read the file first to find the correct line number."
+                )
+
+            # Ensure new_code ends with newline
+            if new_code and not new_code.endswith("\n"):
+                new_code = new_code + "\n"
+            # Insert a blank separator line before new code if last line isn't blank
+            separator = "" if (not lines or lines[line_number - 1].strip() == "") else "\n"
+            insertion = separator + new_code
+            new_lines = lines[:line_number] + [insertion] + lines[line_number:]
+
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+            return self.format_result(
+                f"Inserted {len(new_code.splitlines())} lines after line {line_number} in {file_path}."
+            )
+        except Exception as e:
+            return self.format_result(f"Error inserting into file: {e}")
+
+
+class AppendToFileTool(BaseTool):
+    """Appends new_code to the very end of a file — no line number or anchor needed."""
+    def __init__(self, worktree_path: str):
+        super().__init__(
+            "append",
+            "Appends new_code to the end of file_path. "
+            "Use to add new functions, tests, or blocks at the bottom of an existing file "
+            "without touching anything else. No anchor or line number required."
+        )
+        self.worktree_path = worktree_path
+
+    def execute(self, file_path: str, new_code: str) -> ToolResult:
+        full_path = self._safe_path(self.worktree_path, file_path)
+        if full_path is None:
+            raise PermissionError(f"Access denied: {file_path}")
+        if not os.path.isfile(full_path):
+            return self.format_result(f"Error: File not found: {file_path}")
+
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                existing = f.read()
+
+            # Ensure a blank line separator before new code
+            separator = "\n" if existing and not existing.endswith("\n\n") else ""
+            if existing and not existing.endswith("\n"):
+                separator = "\n" + separator
+
+            with open(full_path, "a", encoding="utf-8") as f:
+                f.write(separator + new_code)
+                if not new_code.endswith("\n"):
+                    f.write("\n")
+
+            return self.format_result(
+                f"Appended {len(new_code.splitlines())} lines to end of {file_path}."
+            )
+        except Exception as e:
+            return self.format_result(f"Error appending to file: {e}")
+
+
 class InsertAfterTool(BaseTool):
     def __init__(self, worktree_path: str):
         super().__init__(
             "insert_after",
             "Inserts content after a specific line in an existing file. "
-            "Use to ADD new functions/classes without overwriting existing content. "
-            "anchor_pattern is a unique substring of the line after which to insert."
+            "anchor_pattern is a unique substring of the line after which to insert. "
+            "WARNING: anchoring to a function def line inserts INSIDE the function body. "
+            "Prefer `insert` (with line_number) or `append` (for end of file) instead."
         )
         self.worktree_path = worktree_path
 

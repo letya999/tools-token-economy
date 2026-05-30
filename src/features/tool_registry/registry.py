@@ -7,7 +7,8 @@ from typing import Any, Type
 from src.features.tool_registry.base import BaseToolValidator
 # Import all tools
 from src.features.tool_registry.basic_tools import (
-    FileReadTool, FileWriteTool, GlobTool, PatchApplierTool, ReadAllTool, InsertAfterTool, StrReplaceEditTool
+    FileReadTool, FileWriteTool, GlobTool, PatchApplierTool, ReadAllTool,
+    InsertAfterTool, InsertAfterLineTool, AppendToFileTool, StrReplaceEditTool,
 )
 from src.features.tool_registry.grep_tools import (
     AstGrepTool, GitGrepTool, GrepTool, RgTool, SemgrepTool, UgrepTool
@@ -53,6 +54,8 @@ class ToolRegistry:
             "edit": StrReplaceEditTool,
             "patch": PatchApplierTool,
             "insert_after": InsertAfterTool,
+            "insert": InsertAfterLineTool,
+            "append": AppendToFileTool,
             "glob": GlobTool,
             "rg": RgTool,
             "grep": GrepTool,
