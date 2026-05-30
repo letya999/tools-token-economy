@@ -139,19 +139,25 @@ class AgnoRunner:
         Unlike pre_hooks (which fire once per agent.run in Agno), tool_hooks
         wrap every individual tool invocation — giving real mid-run budget
         enforcement. Raising any exception aborts the run.
+
+        MCP tools are async coroutines. The hook must await them; otherwise
+        Agno receives a coroutine object and passes "<coroutine ...>" as the
+        tool result to the model — making all MCP search/nav tools blind.
         """
         counter = self._tool_output_token_counter
         count_tok = self._count_tokens
 
-        def budget_hook(function_name, function_call, arguments):
+        async def budget_hook(function_name, function_call, arguments):
             # PRE: hard cap on accumulated tool-output tokens (read-loop guard).
             if counter[0] > max_tool_output_tokens:
                 raise InputCheckError(
                     f"BUDGET_EXCEEDED: accumulated tool output {counter[0]} tokens "
                     f"exceeds {max_tool_output_tokens} — aborting (read-loop detected)"
                 )
-            # Execute the real tool.
+            # Execute the real tool — await if it's an async MCP coroutine.
             result = function_call(**arguments)
+            if inspect.iscoroutine(result):
+                result = await result
             # POST: count output tokens for next call's pre-check.
             try:
                 counter[0] += count_tok(str(result))
