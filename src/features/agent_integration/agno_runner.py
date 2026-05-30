@@ -300,6 +300,8 @@ class AgnoRunner:
             "If a tool returns an error, try a different approach — do not repeat the exact same tool call.",
             "CRITICAL: NEVER delete, truncate, or overwrite existing code. When adding to an existing file, preserve ALL existing content.",
             "CRITICAL: NEVER remove or replace existing tests. You must ADD new tests at the END of the test file, after all existing tests.",
+            "CRITICAL: New tests MUST be written as proper pytest functions: `def test_name():`. NEVER write bare assert statements outside a function body — they cause SyntaxError during pytest collection.",
+            "CONVERGENCE RULE: After reading 3-5 relevant files you have enough context. STOP exploring and START writing your fix immediately. Do not spend more than half your tool budget on retrieval — the other half must be for writing and verifying.",
             "Read files in LARGE blocks (at least 100-200 lines per read call). Do NOT read the same file in small chunks of 20-30 lines.",
             "Efficiency: Use the shell tool's multi_cmd parameter to run multiple related commands in a single turn.",
         ])
