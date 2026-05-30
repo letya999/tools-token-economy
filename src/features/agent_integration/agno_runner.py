@@ -177,7 +177,7 @@ class AgnoRunner:
         Must raise InputCheckError — agno's execute_pre_hooks re-raises only
         InputCheckError/OutputCheckError; any other Exception is swallowed.
         """
-        MAX_MODEL_CALLS = 50
+        MAX_MODEL_CALLS = 20
         MAX_TOOL_OUTPUT_TOKENS = 150_000  # Sum across all tool calls in run.
         UNDERESTIMATE_CORRECTION = 20
         MAX_PER_CALL_CHARS = 400_000
