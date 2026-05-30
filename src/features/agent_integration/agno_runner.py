@@ -177,7 +177,7 @@ class AgnoRunner:
         Must raise InputCheckError — agno's execute_pre_hooks re-raises only
         InputCheckError/OutputCheckError; any other Exception is swallowed.
         """
-        MAX_MODEL_CALLS = 20
+        MAX_MODEL_CALLS = 50
         MAX_TOOL_OUTPUT_TOKENS = 150_000  # Sum across all tool calls in run.
         UNDERESTIMATE_CORRECTION = 20
         MAX_PER_CALL_CHARS = 400_000
@@ -310,7 +310,7 @@ class AgnoRunner:
         # This is THE primary budget control — Agno's pre_hooks fire once per run,
         # not per model call, so the in-hook counters don't trigger mid-run.
         # tool_call_limit IS enforced across the run by Agno.
-        AGNO_TOOL_CALL_HARD_CAP = 15
+        AGNO_TOOL_CALL_HARD_CAP = 50
         effective_tool_cap = min(effective_limit, AGNO_TOOL_CALL_HARD_CAP)
 
         # Schema bloat: each tool's name+docstring is replicated in every prompt.
