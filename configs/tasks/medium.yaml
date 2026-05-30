@@ -1,31 +1,34 @@
 difficulty: medium
-name: "Execution Timeout - Jira Sync Jobs"
+name: "Case-insensitive Bearer token prefix"
 description: |
-  Implement a system-wide execution timeout for all background data processing
-  operations (specifically Jira synchronization and metrics recalculation jobs).
+  The function `parse_bearer_token` in `app/services/admin_auth.py` extracts
+  the token value from an HTTP Authorization header. It currently requires
+  an exact "Bearer " prefix (capital B). Per RFC 6750 §2.1 the scheme name
+  MUST be matched case-insensitively, so headers like "bearer abc" or
+  "BEARER abc" should also be accepted.
 
-  1. Identify the primary service responsible for dispatching these jobs
-     to the external orchestrator.
-  2. Modify this service to enforce a mandatory 1-hour (3600 seconds)
-     timeout. This timeout must be passed as a 'timeout' tag within
-     the execution parameters sent to the orchestrator.
-  3. Locate all call sites (API endpoints and internal handlers) that
-     initiate these background jobs and update them to comply with the
-     new signature/logic.
-  4. Ensure that all unit tests related to job triggering are updated
-     to reflect this change and continue to pass. IMPORTANT: search for
-     the modified function name in test files, find every mock or patch
-     that intercepts it, and update those mock call assertions to expect
-     the new parameters — otherwise tests will fail.
+  1. Locate the `parse_bearer_token` function in `app/services/admin_auth.py`.
+  2. Modify it so the prefix is matched case-insensitively while preserving
+     ALL existing behaviour:
+       - "Bearer abc"  -> "abc"   (unchanged)
+       - "bearer abc"  -> "abc"   (new, must work)
+       - "BEARER abc"  -> "abc"   (new, must work)
+       - "Token abc"   -> None    (unchanged, wrong scheme)
+       - None or empty -> None    (unchanged)
+       - "Bearer   "   -> None    (unchanged, only whitespace after prefix)
+  3. Add ONE new test in `tests/unit/test_admin_auth.py` named
+     `test_parse_bearer_token_case_insensitive` that asserts the lowercase
+     case works. Do NOT modify or remove the existing
+     `test_parse_bearer_token` test.
 
-  You MUST use your retrieval tools to discover the relevant components.
-  Finalize by saving changes with any write tool (edit, write, patch, or insert_after) and output: TASK_COMPLETE.
-test_cmd: "uv run --extra dev pytest tests/unit/ -q"
-timeout_sec: 1200
-target_file: "tests/unit/test_dagster_client.py"
+  Use your retrieval tools to locate the function. Save changes with any
+  write tool (edit, write, patch, or insert_after) and output: TASK_COMPLETE.
+test_cmd: "uv run --extra dev pytest tests/unit/test_admin_auth.py -q"
+timeout_sec: 600
+target_file: "tests/unit/test_admin_auth.py"
 required_files:
-  - "app/services/dagster_client.py"
-  - "app/api/integrations.py"
-  - "tests/unit/test_dagster_client.py"
+  - "app/services/admin_auth.py"
+  - "tests/unit/test_admin_auth.py"
 success_criteria:
-  - "All new tests pass"
+  - "test_parse_bearer_token_case_insensitive passes"
+  - "All pre-existing tests in test_admin_auth.py continue to pass"

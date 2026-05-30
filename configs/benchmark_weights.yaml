@@ -76,7 +76,7 @@ all_metrics_weights:
 
   # Token and cost efficiency (lower is better) — 12.5% total
   total_tokens:
-    weight: 0.045
+    weight: 0.035
     direction: lower
     description: Total tokens consumed (input + output + tool)
   cost_usd:
@@ -84,7 +84,7 @@ all_metrics_weights:
     direction: lower
     description: API cost in USD
   duration_sec:
-    weight: 0.020
+    weight: 0.010
     direction: lower
     description: Wall-clock time to complete the task
   model_calls:
@@ -112,6 +112,6 @@ all_metrics_weights:
     direction: lower
     description: Number of cycles before first required file was read
   context_waste_ratio:
-    weight: 0.040
+    weight: 0.060
     direction: lower
     description: Fraction of read tokens that were NOT from required files

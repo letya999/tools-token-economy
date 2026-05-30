@@ -32,15 +32,15 @@ _DEFAULT_ALL_METRICS: dict[str, dict] = {
     "tool_sequence_score":     {"weight": 0.030, "direction": "higher", "description": "Tool call sequence was logical and efficient"},
     "retrieval_precision":     {"weight": 0.050, "direction": "higher", "description": "Fraction of read files that were actually needed"},
     "retrieval_recall":        {"weight": 0.035, "direction": "higher", "description": "Fraction of needed files that were actually read"},
-    "total_tokens":            {"weight": 0.045, "direction": "lower",  "description": "Total tokens consumed (input + output + tool)"},
+    "total_tokens":            {"weight": 0.035, "direction": "lower",  "description": "Total tokens consumed (input + output + tool)"},
     "cost_usd":                {"weight": 0.040, "direction": "lower",  "description": "API cost in USD"},
-    "duration_sec":            {"weight": 0.020, "direction": "lower",  "description": "Wall-clock time to complete the task"},
+    "duration_sec":            {"weight": 0.010, "direction": "lower",  "description": "Wall-clock time to complete the task"},
     "model_calls":             {"weight": 0.020, "direction": "lower",  "description": "Number of LLM API calls made"},
     "errors":                  {"weight": 0.040, "direction": "lower",  "description": "Runtime errors encountered during execution"},
     "tool_errors":             {"weight": 0.040, "direction": "lower",  "description": "Tool call failures (wrong args, timeouts, etc.)"},
     "avg_tokens_per_tool":     {"weight": 0.040, "direction": "lower",  "description": "Token weight per tool response (lower is more efficient)"},
     "time_to_target":          {"weight": 0.030, "direction": "lower",  "description": "Number of cycles before first required file was read"},
-    "context_waste_ratio":     {"weight": 0.040, "direction": "lower",  "description": "Fraction of read tokens that were NOT from required files"},
+    "context_waste_ratio":     {"weight": 0.060, "direction": "lower",  "description": "Fraction of read tokens that were NOT from required files"},
 }
 
 # Fields where 0 is the ideal "lower is better" value; use 1/(1+val) normalization

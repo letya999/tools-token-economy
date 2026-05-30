@@ -22,6 +22,15 @@ from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+try:
+    import agentbudget
+    from agentbudget import BudgetExhausted, LoopDetected
+    _HAS_AGENTBUDGET = True
+except ImportError:
+    _HAS_AGENTBUDGET = False
+    BudgetExhausted = type("BudgetExhausted", (Exception,), {})
+    LoopDetected = type("LoopDetected", (Exception,), {})
+
 from src.core.models import AgentConfig, McpServerConfig, RunMetrics
 from src.core.tools import Tool
 from src.features.cost_guard import BudgetExceededError
@@ -85,13 +94,15 @@ class AgnoRunner:
         return model
 
     def _build_agno_tools(self) -> list:
+        # Token accumulation now happens in the tool_hooks middleware,
+        # not in this wrapper. This keeps the wrapper minimal.
+        if not hasattr(self, "_tool_output_token_counter"):
+            self._tool_output_token_counter = [0]
         agno_tools_list = []
         for t in self.tools:
             def make_wrapper(tool_obj: Tool):
                 sig = inspect.signature(tool_obj.execute)
 
-                # Build a function with real named parameters via exec so Agno
-                # can introspect them and attach per-parameter validators.
                 globs: dict = {"_tool": tool_obj}
                 parts: list[str] = []
                 args: list[str] = []
@@ -122,32 +133,62 @@ class AgnoRunner:
             agno_tools_list.append(make_wrapper(t))
         return agno_tools_list
 
-    def _build_budget_pre_hook(self, max_cost_usd: float = 0.50):
-        """Returns a pre_hook that enforces hard limits on model-call count and budget.
+    def _build_budget_tool_hook(self, max_tool_output_tokens: int = 150_000):
+        """Per-tool-call middleware. Fires before AND after each tool call.
 
-        Three guards:
-        1. Hard step limit (primary) — fires after MAX_MODEL_CALLS regardless of cost.
-        2. Accumulated cost (secondary) — accumulates per-call estimates across all
-           calls; corrects for run_context.messages excluding system prompt (~20x
-           underestimate empirically for gpt-4.1-mini). Catches read-loop configs
-           that drive up total spend through many calls with growing context.
-        3. Per-call context size (tertiary) — catches single-call context explosion
-           (e.g. agent reads a huge file on one turn).
+        Unlike pre_hooks (which fire once per agent.run in Agno), tool_hooks
+        wrap every individual tool invocation — giving real mid-run budget
+        enforcement. Raising any exception aborts the run.
+        """
+        counter = self._tool_output_token_counter
+        count_tok = self._count_tokens
+
+        def budget_hook(function_name, function_call, arguments):
+            # PRE: hard cap on accumulated tool-output tokens (read-loop guard).
+            if counter[0] > max_tool_output_tokens:
+                raise InputCheckError(
+                    f"BUDGET_EXCEEDED: accumulated tool output {counter[0]} tokens "
+                    f"exceeds {max_tool_output_tokens} — aborting (read-loop detected)"
+                )
+            # Execute the real tool.
+            result = function_call(**arguments)
+            # POST: count output tokens for next call's pre-check.
+            try:
+                counter[0] += count_tok(str(result))
+            except Exception:
+                pass
+            return result
+
+        return budget_hook
+
+    def _build_budget_pre_hook(self, max_cost_usd: float = 0.50):
+        """Returns a pre_hook with three independent budget guards.
+
+        Three parallel fallbacks (any can fire):
+        1. Hard model-call counter (MAX_MODEL_CALLS=20) — primary, deterministic.
+        2. Cumulative tool-output token counter — accumulator filled by
+           tool wrappers via self._tool_output_token_counter. Catches
+           read-loop and read_all patterns flooding context.
+        3. Per-call context size guard (MAX_PER_CALL_CHARS) — catches single
+           explosive read of one huge file.
+
+        Plus the legacy char×20 estimate is kept as a soft signal.
 
         Must raise InputCheckError — agno's execute_pre_hooks re-raises only
-        InputCheckError/OutputCheckError; any other Exception is swallowed silently.
+        InputCheckError/OutputCheckError; any other Exception is swallowed.
         """
-        MAX_MODEL_CALLS = 30
-        # run_context.messages excludes the system prompt (tool schemas + instructions).
-        # Empirically this causes ~20x underestimation of true billing tokens for
-        # gpt-4.1-mini configs. Multiply accumulated estimate by this factor before
-        # comparing to max_cost_usd.
+        MAX_MODEL_CALLS = 20
+        MAX_TOOL_OUTPUT_TOKENS = 150_000  # Sum across all tool calls in run.
         UNDERESTIMATE_CORRECTION = 20
-        # If a single call's message context exceeds this, context is exploding.
         MAX_PER_CALL_CHARS = 400_000
 
         call_count = [0]
         accumulated_estimated_cost = [0.0]
+        # Reset in-place so tool wrappers built earlier keep their reference.
+        if hasattr(self, "_tool_output_token_counter"):
+            self._tool_output_token_counter[0] = 0
+        else:
+            self._tool_output_token_counter = [0]
 
         pricing = {
             "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
@@ -166,6 +207,18 @@ class AgnoRunner:
                 _log.warning("Budget pre-hook: hard model-call limit %d reached", MAX_MODEL_CALLS)
                 raise InputCheckError(
                     f"Hard model-call limit of {MAX_MODEL_CALLS} exceeded — aborting to stay within budget"
+                )
+
+            # Guard 2: cumulative tool-output tokens (populated by tool wrappers).
+            tool_out_total = self._tool_output_token_counter[0]
+            if tool_out_total > MAX_TOOL_OUTPUT_TOKENS:
+                _log.warning(
+                    "Budget pre-hook: cumulative tool-output tokens %d exceeds %d",
+                    tool_out_total, MAX_TOOL_OUTPUT_TOKENS,
+                )
+                raise InputCheckError(
+                    f"Pre-hook aborted: cumulative tool-output tokens {tool_out_total} "
+                    f"exceeds limit {MAX_TOOL_OUTPUT_TOKENS} — read-loop detected"
                 )
 
             run_context = kwargs.get('run_context')
@@ -244,13 +297,36 @@ class AgnoRunner:
 
         budget_hook = self._build_budget_pre_hook(max_cost_usd=self.max_config_cost_usd)
 
+        # Guard #4 (Agno-built-in): hard ceiling on total tool calls across run.
+        # This is THE primary budget control — Agno's pre_hooks fire once per run,
+        # not per model call, so the in-hook counters don't trigger mid-run.
+        # tool_call_limit IS enforced across the run by Agno.
+        AGNO_TOOL_CALL_HARD_CAP = 15
+        effective_tool_cap = min(effective_limit, AGNO_TOOL_CALL_HARD_CAP)
+
+        # Schema bloat: each tool's name+docstring is replicated in every prompt.
+        # Log per-archetype total bytes — relevant for prompt-cache analysis.
+        try:
+            schema_bytes = 0
+            for fn in tools:
+                fn_name = getattr(fn, "name", None) or getattr(fn, "__name__", "?")
+                fn_doc = getattr(fn, "description", None) or getattr(fn, "__doc__", "") or ""
+                schema_bytes += len(fn_name.encode("utf-8")) + len(fn_doc.encode("utf-8"))
+            self._tool_schema_bytes = schema_bytes
+            _log.info("Tool schema bloat: ~%d bytes across %d tools", schema_bytes, len(tools))
+        except Exception:
+            self._tool_schema_bytes = 0
+
+        budget_tool_hook = self._build_budget_tool_hook(max_tool_output_tokens=150_000)
+
         return Agent(
             model=OpenAIChat(id=model_id, max_tokens=4096, seed=self.seed if self.seed is not None else 42),
             tools=tools,
             instructions=instructions,
             markdown=False,
-            tool_call_limit=effective_limit,
+            tool_call_limit=effective_tool_cap,
             pre_hooks=[budget_hook],
+            tool_hooks=[budget_tool_hook],
         )
 
     def _validate_run(self, worktree_path: str, test_cmd: str) -> tuple[bool, int, int, int, str, bool, str]:
@@ -431,6 +507,11 @@ class AgnoRunner:
             if total_read_tok > 0 else 0.0
         )
         metrics_data["time_to_target"] = time_to_target
+        metrics_data["tool_output_tokens_total"] = (
+            self._tool_output_token_counter[0]
+            if hasattr(self, "_tool_output_token_counter") else 0
+        )
+        metrics_data["tool_schema_bytes"] = getattr(self, "_tool_schema_bytes", 0)
 
         return metrics_data
 
@@ -514,12 +595,29 @@ class AgnoRunner:
                 agent = self._build_agent(model_id, all_tools, system_prefix=system_prefix)
 
                 await asyncio.to_thread(lambda: self._rate_limiter.__enter__())
+                _ab_active = False
+                if _HAS_AGENTBUDGET:
+                    try:
+                        agentbudget.init(
+                            self.max_config_cost_usd,
+                            soft_limit=0.9,
+                            max_repeated_calls=15,
+                        )
+                        _ab_active = True
+                    except Exception as _abe:
+                        _log.warning("agentbudget.init failed: %s", _abe)
                 try:
                     response: RunOutput = await asyncio.wait_for(
                             agent.arun(full_task),
                             timeout=float(self.timeout_sec),
                         )
                 finally:
+                    if _ab_active:
+                        try:
+                            _log.info("agentbudget spent: $%.4f", agentbudget.spent())
+                            agentbudget.teardown()
+                        except Exception:
+                            pass
                     await asyncio.to_thread(lambda: self._rate_limiter.__exit__(None, None, None))
 
             duration = time.time() - start_time
@@ -548,6 +646,18 @@ class AgnoRunner:
             duration = time.time() - start_time
             if "execution_result" not in metrics_data:
                 metrics_data["execution_result"] = "budget_exceeded"
+        except BudgetExhausted as _be:
+            _log.warning("AgentBudget SDK-level budget exhausted: %s", _be)
+            success = False
+            duration = time.time() - start_time
+            if "execution_result" not in metrics_data:
+                metrics_data["execution_result"] = "budget_exhausted_sdk"
+        except LoopDetected as _ld:
+            _log.warning("AgentBudget loop detected: %s", _ld)
+            success = False
+            duration = time.time() - start_time
+            if "execution_result" not in metrics_data:
+                metrics_data["execution_result"] = "loop_detected"
         except TimeoutError:
             _log.warning("Agent async run timed out after %ss", self.timeout_sec)
             success = False
@@ -620,6 +730,17 @@ class AgnoRunner:
         start_time = time.time()  # agent clock starts after warmup
         success = False
         metrics_data: dict[str, Any] = {}
+        _ab_active = False
+        if _HAS_AGENTBUDGET:
+            try:
+                agentbudget.init(
+                    self.max_config_cost_usd,
+                    soft_limit=0.9,
+                    max_repeated_calls=100,
+                )
+                _ab_active = True
+            except Exception as _abe:
+                _log.warning("agentbudget.init failed: %s", _abe)
         try:
             with self._rate_limiter:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
@@ -651,12 +772,29 @@ class AgnoRunner:
             success = False
             if "execution_result" not in metrics_data:
                 metrics_data["execution_result"] = "budget_exceeded"
+        except BudgetExhausted as _be:
+            _log.warning("AgentBudget SDK-level budget exhausted: %s", _be)
+            success = False
+            if "execution_result" not in metrics_data:
+                metrics_data["execution_result"] = "budget_exhausted_sdk"
+        except LoopDetected as _ld:
+            _log.warning("AgentBudget loop detected: %s", _ld)
+            success = False
+            if "execution_result" not in metrics_data:
+                metrics_data["execution_result"] = "loop_detected"
         except concurrent.futures.TimeoutError:
             _log.warning("Agent sync run timed out after %ss", self.timeout_sec)
             success = False
         except Exception:
             _log.exception("Agno agent execution failed")
             success = False
+        finally:
+            if _ab_active:
+                try:
+                    _log.info("agentbudget spent: $%.4f", agentbudget.spent())
+                    agentbudget.teardown()
+                except Exception:
+                    pass
 
         duration = time.time() - start_time
         return RunMetrics(

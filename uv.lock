@@ -11,6 +11,15 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "agentbudget"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/17/11/648538d07d1d599a5d59948fd8edd6b0827e1220165870118f8e210b5142/agentbudget-0.3.0.tar.gz", hash = "sha256:b4df54ff37beb4b8f9b13b451ff12866231add28b9ba8a106e954ad92a848c0a", size = 44241, upload-time = "2026-03-29T03:22:42.307Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/e1/a48385d3f6aafb1b31d13a7a3968e0502beec20e94970a7936e4dd1bf164/agentbudget-0.3.0-py3-none-any.whl", hash = "sha256:6f6c3d43eca5280a28d5e55306c8a527b227802b9c340683ee0f5ee486d637b1", size = 33541, upload-time = "2026-03-29T03:22:41.221Z" },
+]
+
+[[package]]
 name = "agno"
 version = "2.6.9"
 source = { registry = "https://pypi.org/simple" }
@@ -2064,6 +2073,7 @@ name = "tools-token-economy"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "agentbudget" },
     { name = "agno" },
     { name = "anyio", extra = ["trio"] },
     { name = "ast-grep-cli" },
@@ -2091,6 +2101,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "agentbudget", specifier = ">=0.3.0" },
     { name = "agno", specifier = ">=1.0.0" },
     { name = "anyio", extras = ["trio"], specifier = ">=4.0.0" },
     { name = "ast-grep-cli", specifier = ">=0.42.3" },

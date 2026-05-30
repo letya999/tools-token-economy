@@ -119,6 +119,8 @@ class RunMetrics(BaseModel):
     context_waste_ratio: float = 0.0
     warmup_sec: float = 0.0
     test_stderr: str = ""
+    tool_output_tokens_total: int = 0
+    tool_schema_bytes: int = 0
 
     @computed_field
     @property

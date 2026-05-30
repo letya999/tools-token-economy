@@ -79,3 +79,7 @@ configs:
     name: "Hybrid: Serena + Semble"
     archetype: "hybrid"
     tools: ["serena", "semble", "read", "write", "edit", "patch", "insert_after"]
+  - id: "21_bash_only"
+    name: "Minimalist: Bash Only"
+    archetype: "minimal"
+    tools: ["shell"]
