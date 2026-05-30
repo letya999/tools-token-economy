@@ -605,12 +605,15 @@ class AgnoRunner:
 
                 await asyncio.to_thread(lambda: self._rate_limiter.__enter__())
                 _ab_active = False
-                if _HAS_AGENTBUDGET:
+                _has_mcp_semantic = any(
+                    c.tool_name in ("serena", "semble") for c in self.mcp_configs
+                )
+                if _HAS_AGENTBUDGET and not _has_mcp_semantic:
                     try:
                         agentbudget.init(
                             self.max_config_cost_usd,
                             soft_limit=0.9,
-                            max_repeated_calls=20,
+                            max_repeated_calls=50,
                         )
                         _ab_active = True
                     except Exception as _abe:
@@ -741,12 +744,15 @@ class AgnoRunner:
         success = False
         metrics_data: dict[str, Any] = {}
         _ab_active = False
-        if _HAS_AGENTBUDGET:
+        _has_mcp_semantic = any(
+            c.tool_name in ("serena", "semble") for c in self.mcp_configs
+        )
+        if _HAS_AGENTBUDGET and not _has_mcp_semantic:
             try:
                 agentbudget.init(
                     self.max_config_cost_usd,
                     soft_limit=0.9,
-                    max_repeated_calls=100,
+                    max_repeated_calls=50,
                 )
                 _ab_active = True
             except Exception as _abe:
