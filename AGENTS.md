@@ -1,5 +1,7 @@
 # Agent Instructions: Tools Token Economy Benchmark
 
+**Repo:** https://github.com/letya999/tools-token-economy
+
 ## For AI Agents — Two-Phase Protocol
 
 Before doing any coding work on this repo, follow this two-phase protocol:
@@ -139,6 +141,8 @@ A tool is a class in `src/features/tool_registry/` that inherits `BaseTool` from
 ---
 
 You are an expert AI agent working on a research framework designed to evaluate the token-efficiency and task-efficiency of coding agents.
+
+**Latest benchmark run (2026-05-30):** 20/21 configs passed (95%). Champion: `08_git_grep` (SPT=80.4, $0.0027). Most expensive: `06_read_all` (682K tokens, $0.0877). Only failure: `03_gemini_like` — read_all context explosion exceeds usable model window.
 
 ## Core Mandates
 - **Clean Architecture**: Strictly maintain separation between layers (Core, Features, Orchestrator).
