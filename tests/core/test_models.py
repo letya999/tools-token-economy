@@ -47,7 +47,7 @@ from dataclasses import field
 def test_provider_config_defaults():
     cfg = ProviderConfig()
     assert cfg.provider == "openai"
-    assert cfg.model == "openai/gpt-4.1-mini"
+    assert cfg.model == "gpt-4.1-mini"
     assert cfg.max_steps == 50
     assert cfg.temperature == 0.0
 

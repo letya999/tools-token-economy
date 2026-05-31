@@ -5,6 +5,11 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.features.stats import (
+    coefficient_of_variation, bootstrap_ci, median, run_validity_status,
+    STATUS_OK, STATUS_LOW_CONFIDENCE, STATUS_INSUFFICIENT_DATA, STATUS_UNSTABLE,
+)
+
 NUMERIC_METRICS = [
     "eval_score",
     "input_tokens",
@@ -35,7 +40,9 @@ NUMERIC_METRICS = [
     "total_tokens",
     "avg_tokens_per_tool",
     "cost_usd",
-    "success_per_token"
+    "success_per_token",
+    "schema_overhead_tokens",
+    "net_spt"
 ]
 
 def write_session_meta(results_dir: str, session_id: str, meta_dict: dict[str, Any]):
@@ -109,7 +116,7 @@ def aggregate_session(results_dir: str, session_id: str, percentile: int = 75) -
     Groups by config_id and computes aggregates.
     """
     results_path = Path(results_dir)
-    config_data = {}
+    config_runs = {}
 
     # Find all runs for this session
     search_pattern = f"run_{session_id}_*"
@@ -139,49 +146,78 @@ def aggregate_session(results_dir: str, session_id: str, percentile: int = 75) -
         try:
             with open(metrics_file, "r", encoding="utf-8") as f:
                 metrics = json.load(f)
+                if config_id not in config_runs:
+                    config_runs[config_id] = []
+                config_runs[config_id].append(metrics)
         except Exception:
             continue
-            
-        if config_id not in config_data:
-            config_data[config_id] = {m: [] for m in NUMERIC_METRICS}
-            config_data[config_id]["success"] = []
-            
-        for m in NUMERIC_METRICS:
-            if m in metrics:
-                config_data[config_id][m].append(metrics[m])
-        
-        if "success" in metrics:
-            config_data[config_id]["success"].append(1 if metrics["success"] else 0)
 
     aggregated = {}
-    for config_id, data in config_data.items():
-        stats = {}
-        n = len(data["success"])
-        if n == 0:
+    for config_id, runs in config_runs.items():
+        # 1. Filter invalid runs BEFORE aggregating
+        valid_runs = [
+            r for r in runs
+            if not r.get("parametric_success", False)
+            and not r.get("agent_runaway", False)
+            and r.get("telemetry_ok", True)
+        ]
+        n_total = len(runs)
+        n_valid = len(valid_runs)
+        
+        if n_total == 0:
             continue
             
-        stats["metadata"] = {"n": n}
+        stats = {}
+        stats["metadata"] = {"n": n_valid, "n_total": n_total}
         
-        # Success rate
-        success_rate = sum(data["success"]) / n
-        stats["success"] = success_rate > 0.5
-        stats["success_rate"] = success_rate
-        
-        for m in NUMERIC_METRICS:
-            vals = data[m]
-            if not vals:
+        if n_valid == 0:
+            stats["success"] = False
+            stats["success_rate"] = 0.0
+            for m in NUMERIC_METRICS:
                 stats[m] = 0.0
-                continue
-                
-            stats[m] = float(np.percentile(vals, percentile))
-            stats["metadata"][m] = {
-                "n": n,
-                "p25": float(np.percentile(vals, 25)),
-                "p50": float(np.percentile(vals, 50)),
-                "p75": float(np.percentile(vals, 75)),
-                "mean": float(np.mean(vals)),
-                "std": float(np.std(vals))
-            }
+        else:
+            # Success rate based on valid runs
+            success_values = [1 if r.get("success", False) else 0 for r in valid_runs]
+            success_rate = sum(success_values) / n_valid
+            stats["success"] = success_rate > 0.5
+            stats["success_rate"] = success_rate
+            
+            for m in NUMERIC_METRICS:
+                vals = [float(r.get(m, 0.0)) for r in valid_runs]
+                if not vals:
+                    stats[m] = 0.0
+                    continue
+                    
+                stats[m] = float(np.percentile(vals, percentile))
+                stats["metadata"][m] = {
+                    "n": n_valid,
+                    "p25": float(np.percentile(vals, 25)),
+                    "p50": float(np.percentile(vals, 50)),
+                    "p75": float(np.percentile(vals, 75)),
+                    "mean": float(np.mean(vals)),
+                    "std": float(np.std(vals))
+                }
+
+        # 3. After computing stats for the config, determine status:
+        token_values = [float(r.get("total_tokens", 0)) for r in valid_runs if float(r.get("total_tokens", 0)) > 0]
+        status = run_validity_status(token_values)
+
+        # 4. Compute CI for success_per_token (primary metric):
+        spt_values = [float(r.get("success_per_token", 0)) for r in valid_runs]
+        ci_lo, ci_hi = bootstrap_ci(spt_values) if len(spt_values) >= 2 else (0.0, 0.0)
+        cv = coefficient_of_variation(spt_values) if spt_values else 0.0
+
+        # 5. Add to the aggregated stats dict for this config:
+        stats["_n_total_runs"] = n_total
+        stats["_n_valid_runs"] = n_valid
+        stats["_validity_status"] = status
+        stats["_spt_ci_lo"] = ci_lo
+        stats["_spt_ci_hi"] = ci_hi
+        stats["_spt_cv"] = cv
+
+        # 6. If n_valid <= 2: also set stats["_suggested_additional_runs"] = max(0, 4 - n_valid)
+        if n_valid <= 2:
+            stats["_suggested_additional_runs"] = max(0, 4 - n_valid)
             
         aggregated[config_id] = stats
         

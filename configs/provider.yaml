@@ -1,7 +1,18 @@
-provider: "openai"
-model: "openai/gpt-4.1-mini"
-api_base: ""
+# Agent model (the system under test)
+provider: "openai"            # openai | anthropic | google | openrouter | qwen | compatible
+model: "gpt-4.1-mini"
+api_base: ""                  # only for provider: compatible
+api_key_env: "OPENAI_API_KEY" # env var holding the key
+temperature: 0.0
+seed: 42                      # base seed; per-run offset applied (see Phase 4)
 max_steps: 50
 max_iterations: 50
-temperature: 0.0
-seed: 42
+
+# Judge model (must differ from agent to avoid self-evaluation bias)
+judge:
+  provider: "openai"
+  model: "gpt-5.1-mini"       # direct OpenAI Platform, NOT via OpenRouter
+  api_base: ""
+  api_key_env: "OPENAI_API_KEY"
+  temperature: 0.0
+  self_consistency: 1         # number of judge samples (median); 1 = single call

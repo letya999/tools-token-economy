@@ -5,7 +5,10 @@ def build_tool_restriction_prefix(config: AgentConfig) -> str:
     """
     Returns a prompt prefix that restricts the agent to the config's tool set.
     """
-    retrieval_tools = sorted(set(config.tools) - {"test", "patch", "write"})    
+    if config.tool_restriction_prefix:
+        return config.tool_restriction_prefix + "\n"
+
+    retrieval_tools = sorted(set(config.tools) - {"test", "patch", "write"})
     write_tools = [t for t in config.tools if t in ("write", "patch")]
 
     if not retrieval_tools and not write_tools:

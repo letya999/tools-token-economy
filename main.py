@@ -128,7 +128,8 @@ def main():
     parser = argparse.ArgumentParser(description="Tools Token Economy Benchmark Framework")
     parser.add_argument("--provider", default="configs/provider.yaml", help="Provider config YAML")
     parser.add_argument("--tools", default="configs/tools.yaml", help="Tools/strategies config YAML")
-    parser.add_argument("--task-config", default="configs/tasks/medium.yaml", help="Task config YAML")
+    parser.add_argument("--task-config", default="configs/tasks/aging_stale.yaml", help="Task config YAML")
+    parser.add_argument("--task-name", help="Task name to load from configs/tasks/<name>.yaml (overrides --task-config)")
     parser.add_argument("--codebase", default="configs/codebase.yaml", help="Codebase config YAML")
     parser.add_argument("--weights", default="configs/benchmark_weights.yaml", help="Benchmark weights YAML")
     parser.add_argument("--configs", default="configs/benchmark_configs.yaml",
@@ -158,7 +159,7 @@ def main():
     parser.add_argument(
         "--runs",
         type=int,
-        default=1,
+        default=5,
         help="Number of full benchmark repetitions (runs) to execute.",
     )
     parser.add_argument("--doctor", action="store_true", help="Run infrastructure health checks")
@@ -169,6 +170,13 @@ def main():
                         help="Build HTML dashboard from results/ and serve on localhost:8080")
 
     args = parser.parse_args()
+
+    # Handle task-name override
+    if args.task_name:
+        args.task_config = f"configs/tasks/{args.task_name}.yaml"
+        if not os.path.exists(args.task_config):
+             print(f"Error: Task config not found at {args.task_config}")
+             return
 
     from src.core.config_loader import (
         load_codebase_config,
@@ -260,9 +268,28 @@ def main():
 
     if args.retry_failed is not None:
         ts = None if args.retry_failed == "latest" else args.retry_failed
-        orchestrator.run_failed_configs(run_timestamp=ts, config_ids=args.config_ids)
+        session_id = orchestrator.run_failed_configs(run_timestamp=ts, config_ids=args.config_ids)
     else:
-        orchestrator.run_suite(config_ids=args.config_ids)
+        session_id = orchestrator.run_suite(config_ids=args.config_ids)
+
+    # Validity Summary for multi-run sessions
+    if session_id and args.runs > 1:
+        from src.features.multi_run import aggregate_session
+        from src.features.stats import STATUS_OK
+        
+        results = aggregate_session(args.results, session_id)
+        if results:
+            print("\n" + "="*60)
+            print("  VALIDITY SUMMARY")
+            print("="*60)
+            for cfg_id, stats in results.items():
+                status = stats.get("_validity_status", "unknown")
+                if status != STATUS_OK:
+                    suggested = stats.get("_suggested_additional_runs", 0)
+                    print(f"  [{status.upper()}] Config: {cfg_id}")
+                    if suggested > 0:
+                        print(f"             Suggested additional runs: {suggested}")
+            print("="*60 + "\n")
 
 if __name__ == "__main__":
     main()

@@ -22,14 +22,24 @@ class McpServerConfig:
         return {k: v.replace("{path}", worktree_path) if isinstance(v, str) else v for k, v in self.warmup_args.items()}
 
 
+class JudgeConfig(BaseModel):
+    provider: str = "openai"
+    model: str = "gpt-5.1-mini"
+    api_base: str = ""
+    api_key_env: str = "OPENAI_API_KEY"
+    temperature: float = 0.0
+    self_consistency: int = 1
+
 class ProviderConfig(BaseModel):
     provider: str = "openai"
-    model: str = "openai/gpt-4.1-mini"
+    model: str = "gpt-4.1-mini"
     api_base: str = ""
+    api_key_env: str = "OPENAI_API_KEY"
     max_steps: int = 50
     max_iterations: int = 20
     temperature: float = 0.0
     seed: int | None = 42
+    judge: JudgeConfig = JudgeConfig()
 
 
 class TaskConfig(BaseModel):
@@ -74,9 +84,11 @@ class AgentConfig(BaseModel):
     tools: list[str]
     model: str = "gemini-2.5-flash"
     max_steps: int = 50
+    tool_restriction_prefix: str = ""
 
 class RunMetrics(BaseModel):
     success: bool
+    success_binary: bool = False
     eval_score: float
     input_tokens: int
     output_tokens: int
@@ -122,6 +134,11 @@ class RunMetrics(BaseModel):
     tool_output_tokens_total: int = 0
     tool_schema_bytes: int = 0
     test_stdout: str = ""
+    parametric_success: bool = False
+    agent_runaway: bool = False
+    telemetry_ok: bool = True
+    schema_overhead_tokens: int = 0
+    net_spt: float = 0.0
 
     @computed_field
     @property

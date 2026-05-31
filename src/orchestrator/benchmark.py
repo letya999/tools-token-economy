@@ -18,6 +18,7 @@ from src.core.models import (
     RunMetrics,
     TaskConfig,
 )
+from src.core.scoring import compute_eval_composite, eval_weights
 from src.features.agent_integration.agno_runner import AgnoRunner
 from src.features.cost_guard import BudgetExceededError, CostGuard
 from src.features.dashboard_builder import find_last_full_run_timestamp, generate_dashboard
@@ -251,6 +252,7 @@ class BenchmarkOrchestrator:
 
             runner = AgnoRunner(
                 config, tools,
+                provider_cfg=self.provider_config,
                 mcp_configs=mcp_configs,
                 mock=self.dry_run,
                 timeout_sec=self.timeout_sec,
@@ -279,6 +281,7 @@ class BenchmarkOrchestrator:
             run_metrics = run_metrics.model_copy(update={
                 "cost_exceeded": flags["cost_exceeded"],
                 "token_exceeded": flags["token_exceeded"],
+                "agent_runaway": flags["token_exceeded"] or run_metrics.tool_errors > 10 or run_metrics.agent_cycles > 40
             })
 
             # LLM Judge Evaluation (skipped in dry-run)
@@ -295,7 +298,7 @@ class BenchmarkOrchestrator:
                         with open(patch_path, encoding="utf-8") as f:
                             patch_content = f.read()
 
-                    judge = LLMJudge()
+                    judge = LLMJudge(judge_config=self.provider_config.judge)
                     report = judge.evaluate(
                         task_description=(prefix + task_description) if prefix else task_description,
                         agent_messages=messages_data,
@@ -305,6 +308,8 @@ class BenchmarkOrchestrator:
                         tests_total=run_metrics.tests_passed + run_metrics.errors,
                         success=run_metrics.success,
                         execution_result=run_metrics.execution_result,
+                        success_criteria=self.task_config.success_criteria,
+                        required_files=self.task_config.required_files,
                     )
                     run_metrics = run_metrics.model_copy(update={
                         "task_solved_score": report.task_solved_score,
@@ -323,6 +328,22 @@ class BenchmarkOrchestrator:
                         "judge_reasoning_tool_sequence": report.tool_sequence_reasoning,
                         "judge_model": report.judge_model,
                     })
+                    
+                    # Compute composite eval_score
+                    judge_scores = {
+                        "task_solved_score": report.task_solved_score,
+                        "tool_correctness_score": report.tool_correctness_score,
+                        "context_quality_score": report.context_quality_score,
+                        "correctness_score": report.correctness_score,
+                        "minimality_score": report.minimality_score,
+                        "pattern_adherence_score": report.pattern_adherence_score,
+                        "tool_sequence_score": report.tool_sequence_score,
+                    }
+                    new_eval_score = compute_eval_composite(judge_scores, eval_weights(), run_metrics.success)
+                    run_metrics = run_metrics.model_copy(update={
+                        "eval_score": new_eval_score,
+                        "success_binary": run_metrics.success
+                    })
                 except Exception as e:
                     self.logger.warning("LLM Judge failed for config %s: %s", config.id, e)
 
@@ -337,6 +358,15 @@ class BenchmarkOrchestrator:
                     })
                 except Exception as e:
                     self.logger.warning("Retrieval metrics failed for %s: %s", config.id, e)
+
+            # Compute parametric_success flag
+            ps = (
+                run_metrics.success
+                and run_metrics.retrieval_precision == 0.0
+                and run_metrics.retrieval_recall == 0.0
+                and getattr(run_metrics, 'files_read', 99) < 2
+            )
+            run_metrics = run_metrics.model_copy(update={"parametric_success": ps})
 
             final_result = EvalResult(
                 run_id=run_id,
@@ -479,7 +509,17 @@ class BenchmarkOrchestrator:
 
                     run_id = f"run_{session_id}_r{rep:03d}_{config.id}"
                     self.logger.info("Running config: %s (%s) [Rep %d]", config.id, config.name, rep)
-                    self._run_single_config(config, run_id, self.task_config.description, baseline_pass_count)
+                    
+                    # Update seed for this repetition to ensure statistical variety
+                    orig_seed = self.provider_config.seed
+                    if self.provider_config.seed is not None:
+                        self.provider_config.seed = orig_seed + rep
+                    
+                    try:
+                        self._run_single_config(config, run_id, self.task_config.description, baseline_pass_count)
+                    finally:
+                        # Restore original seed
+                        self.provider_config.seed = orig_seed
                     
                     if not self.dry_run:
                         self.logger.info("Sleeping 5s...")
@@ -522,6 +562,8 @@ class BenchmarkOrchestrator:
             self.logger.info("Dashboard generated: %s", out_path)
         except Exception as e:
             self.logger.warning("Failed to generate dashboard: %s", e)
+            
+        return timestamp
 
     def run_failed_configs(self, run_timestamp: str | None = None, config_ids: list[str] | None = None):
         """Re-runs only configs that previously failed in a given benchmark run."""
@@ -605,3 +647,5 @@ class BenchmarkOrchestrator:
             self.logger.info("Updated dashboard generated: %s", out_path)
         except Exception as e:
             self.logger.warning("Failed to generate dashboard: %s", e)
+            
+        return run_timestamp

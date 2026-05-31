@@ -3,83 +3,177 @@ configs:
     name: "Cursor-like"
     archetype: "cursor"
     tools: ["repo_map", "simple_rag", "read", "write", "edit", "patch", "insert", "append", "shell"]
+    tool_restriction_prefix: |
+      Use repo_map for navigation. Example: repo_map().
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: repo_map, simple_rag, read, write, edit, patch, insert, append, shell.
   - id: "02_claude_code_like"
     name: "Claude Code-like"
     archetype: "claude"
     tools: ["glob", "rg", "read", "write", "edit", "patch", "insert", "append", "shell"]
+    tool_restriction_prefix: |
+      Use glob for navigation. Example: glob("**/*.py").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: glob, rg, read, write, edit, patch, insert, append, shell.
   - id: "03_gemini_like"
     name: "Gemini-like"
     archetype: "gemini"
     tools: ["repo_map", "read_all", "rg", "write", "edit", "patch", "insert", "append", "shell"]
+    tool_restriction_prefix: |
+      Use repo_map for navigation. Example: repo_map().
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: repo_map, read_all, rg, write, edit, patch, insert, append, shell.
   - id: "04_codex_like"
     name: "Codex-like"
     archetype: "codex"
     tools: ["grep", "read", "write", "edit", "patch", "insert", "append", "shell"]
+    tool_restriction_prefix: |
+      Use grep for navigation. Example: grep("pattern", "*.py").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: grep, read, write, edit, patch, insert, append, shell.
   - id: "05_read_only"
     name: "Ablation: Read Only"
     archetype: "ablation"
     tools: ["glob", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use glob for navigation. Example: glob("**/*.py").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: glob, read, write, edit, patch, insert, append.
   - id: "06_read_all"
     name: "Ablation: Read All"
     archetype: "ablation"
     tools: ["read_all", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use read_all for navigation. Example: read_all().
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: read_all, read, write, edit, patch, insert, append.
   - id: "07_grep"
     name: "Ablation: Grep"
     archetype: "ablation"
     tools: ["grep", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use grep for navigation. Example: grep("pattern", "*.py").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: grep, read, write, edit, patch, insert, append.
   - id: "08_git_grep"
     name: "Ablation: Git Grep"
     archetype: "ablation"
     tools: ["git_grep", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use git_grep for navigation. Example: git_grep("pattern").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: git_grep, read, write, edit, patch, insert, append.
   - id: "09_rg"
     name: "Ablation: Ripgrep"
     archetype: "ablation"
     tools: ["rg", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use rg for navigation. Example: rg("pattern").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: rg, read, write, edit, patch, insert, append.
   - id: "10_ugrep"
     name: "Ablation: Ugrep"
     archetype: "ablation"
     tools: ["ugrep", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use ugrep for navigation. Example: ugrep("pattern").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: ugrep, read, write, edit, patch, insert, append.
   - id: "11_ast_grep"
     name: "Ablation: ast-grep"
     archetype: "ablation"
     tools: ["ast_grep", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use ast_grep for navigation. Example: ast_grep("pattern").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: ast_grep, read, write, edit, patch, insert, append.
   - id: "12_tree_sitter"
     name: "Ablation: Tree-sitter"
     archetype: "ablation"
     tools: ["glob", "tree_sitter", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use tree_sitter for navigation. Example: tree_sitter("query").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: glob, tree_sitter, read, write, edit, patch, insert, append.
   - id: "13_lsp"
     name: "Ablation: LSP Symbols"
     archetype: "ablation"
     tools: ["lsp_symbols", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use lsp_symbols for navigation. Example: lsp_symbols("file.py").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: lsp_symbols, read, write, edit, patch, insert, append.
   - id: "14_repo_map"
     name: "Ablation: Repo Map"
     archetype: "ablation"
     tools: ["repo_map", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use repo_map for navigation. Example: repo_map().
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: repo_map, read, write, edit, patch, insert, append.
   - id: "15_simple_rag"
     name: "Ablation: Simple RAG"
     archetype: "ablation"
     tools: ["simple_rag", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use simple_rag for navigation. Example: simple_rag("query").
+      Do NOT fall back to bash/shell/grep unless the prescribed tool fails with an error.
+      Prescribed tools: simple_rag, read, write, edit, patch, insert, append.
   - id: "16_serena_only"
     name: "Semantic: Serena Only"
     archetype: "semantic"
     tools: ["serena", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use serena for navigation. Example: find_symbol("my_func").
+      DO NOT use shell commands, grep, or read for code navigation.
+      Use find_symbol('function_name') to locate code, then find_referencing_symbols to understand callers.
+      Only use read after locating the exact file via symbol search.
+      Prescribed tools: serena, read, write, edit, patch, insert, append.
   - id: "17_semble_only"
     name: "Semantic: Semble Only"
     archetype: "semantic"
     tools: ["semble", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use semble for navigation. Example: search("query").
+      DO NOT use shell commands, grep, or read for code navigation.
+      Use find_symbol('function_name') to locate code, then find_referencing_symbols to understand callers.
+      Only use read after locating the exact file via symbol search.
+      Prescribed tools: semble, read, write, edit, patch, insert, append.
   - id: "18_rg_repo_map"
     name: "Hybrid: RG + Repo Map"
     archetype: "hybrid"
     tools: ["repo_map", "rg", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use repo_map and rg for navigation. Example: repo_map().
+      DO NOT use shell commands, grep, or read for code navigation.
+      Use find_symbol('function_name') to locate code, then find_referencing_symbols to understand callers.
+      Only use read after locating the exact file via symbol search.
+      Prescribed tools: repo_map, rg, read, write, edit, patch, insert, append.
   - id: "19_rg_lsp"
     name: "Hybrid: RG + LSP"
     archetype: "hybrid"
     tools: ["rg", "lsp_symbols", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use rg and lsp_symbols for navigation. Example: rg("pattern").
+      DO NOT use shell commands, grep, or read for code navigation.
+      Use find_symbol('function_name') to locate code, then find_referencing_symbols to understand callers.
+      Only use read after locating the exact file via symbol search.
+      Prescribed tools: rg, lsp_symbols, read, write, edit, patch, insert, append.
   - id: "20_serena_semble"
     name: "Hybrid: Serena + Semble"
     archetype: "hybrid"
     tools: ["serena", "semble", "read", "write", "edit", "patch", "insert", "append"]
+    tool_restriction_prefix: |
+      Use serena and semble for navigation. Example: find_symbol("my_func").
+      DO NOT use shell commands, grep, or read for code navigation.
+      Use find_symbol('function_name') to locate code, then find_referencing_symbols to understand callers.
+      Only use read after locating the exact file via symbol search.
+      Prescribed tools: serena, semble, read, write, edit, patch, insert, append.
   - id: "21_bash_only"
     name: "Minimalist: Bash Only"
     archetype: "minimal"
     tools: ["shell"]
+    tool_restriction_prefix: |
+      Use shell for navigation. Example: shell("ls -R").
+      Do NOT fall back to other tools.
+      Prescribed tools: shell.

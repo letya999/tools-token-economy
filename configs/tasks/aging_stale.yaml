@@ -1,0 +1,31 @@
+difficulty: hard
+name: "Work item aging: add is_stale flag"
+description: |
+  The Work Item Aging calculation in pipelines/calculations/aging.py computes, for each
+  active (unresolved) issue, how many days it has spent in its current status
+  (column: age_in_status_days).
+
+  Product wants to highlight items that have stagnated. Add a new boolean output column
+  named `is_stale` to the aging facts result. An issue is stale when its
+  age_in_status_days is strictly greater than 14 days.
+
+  Requirements:
+  - Define a module-level constant STALE_AGE_THRESHOLD_DAYS = 14 in aging.py and use it.
+  - The `is_stale` column MUST be present in EVERY DataFrame the function returns, including
+    the early empty-result branch that declares an explicit schema (use pl.Boolean there).
+  - Do NOT change existing column names or the meaning of age_days / age_in_status_days.
+  - Add ONE regression test at the END of tests/unit/test_aging.py that builds an active
+    issue with age_in_status_days > 14 and asserts is_stale is True, plus one with
+    age_in_status_days <= 14 asserting False. Do not insert it inside another function.
+  - All pre-existing tests in tests/unit/test_aging.py MUST still pass.
+test_cmd: "uv run --extra dev pytest tests/unit/test_aging.py -q"
+timeout_sec: 600
+target_file: "tests/unit/test_aging.py"
+required_files:
+  - "pipelines/calculations/aging.py"
+  - "pipelines/calculations/commitment_resolver.py"
+  - "tests/unit/test_aging.py"
+success_criteria:
+  - "aging output includes is_stale boolean column in all return paths"
+  - "is_stale is True iff age_in_status_days > 14"
+  - "All pre-existing aging tests pass"

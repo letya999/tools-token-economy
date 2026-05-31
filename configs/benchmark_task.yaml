@@ -4,44 +4,18 @@
 target_repo:
   url: "https://github.com/letya999/process_metrics_platform_v2"
   # Freeze to a specific commit for full reproducibility
-  # Run: git rev-parse HEAD  after cloning to get this value
   commit: "HEAD"
-  local_path: ""  # Set after cloning, e.g. /home/user/repos/process_metrics_platform_v2
+  # The orchestrator will try to find this path or clone it.
+  # Use project-relative or absolute path. 
+  local_path: "process_metrics_platform_v2"
 
+# Task is now decoupled into configs/tasks/aging_stale.yaml
+# This file is kept for backward compatibility and as a fallback.
 task:
-  description: |
-    Add schedule and sensor management to the admin API.
-
-    The application already has a Dagster-based pipeline system with schedules and sensors.
-    The admin API currently has job management endpoints. Extend it by adding:
-
-    1. Endpoints to list all Dagster schedules with their current running status
-    2. Endpoints to start and stop individual schedules by name
-    3. Endpoints to list all Dagster sensors with their current running status
-    4. Endpoints to start and stop individual sensors by name
-
-    Follow the existing patterns in the codebase for authentication, error handling,
-    and response formatting. Add at least one unit test for the new functionality.
-
-    You MUST use write or patch to save changes to disk. Reading without writing is a failure.
-    When done, output exactly: TASK_COMPLETE
-
-  test_cmd: "python -m pytest tests/unit/ -v --tb=short -q"
-
-  success_criteria:
-    - "New schedule and sensor endpoints are present in the codebase"
-    - "At least one new unit test added"
-    - "Existing tests still pass"
+  name: "Work item aging: add is_stale flag"
+  description_file: "configs/tasks/aging_stale.yaml"
 
 setup:
   # Run these once to prepare the benchmark environment (from WSL)
-  clone_cmd: "git clone https://github.com/letya999/process_metrics_platform_v2 /tmp/benchmark_repo"
-  install_cmd: "cd /tmp/benchmark_repo && pip install -e ."
-  # OpenCode model: uses google/gemini-2.5-flash (free tier, 10 RPM)
-
-# Usage:
-#   python main.py \
-#     --repo /tmp/benchmark_repo \
-#     --task "$(python -c \"import yaml; print(yaml.safe_load(open('configs/benchmark_task.yaml'))['task']['description'])\")" \
-#     --test-cmd "python -m pytest tests/ -v --tb=short -q -m 'unit or not integration'" \
-#     --results results_real
+  clone_cmd: "git clone https://github.com/letya999/process_metrics_platform_v2 process_metrics_platform_v2"
+  install_cmd: "cd process_metrics_platform_v2 && uv sync --extra dev"

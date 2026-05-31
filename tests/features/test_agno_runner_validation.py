@@ -19,7 +19,7 @@ def test_max_iterations_caps_tool_call_limit():
     runner = AgnoRunner(config, tools=[], max_iterations=10)
 
     with patch("src.features.agent_integration.agno_runner.Agent") as mock_agent_cls, \
-         patch("src.features.agent_integration.agno_runner.OpenAIChat"):
+         patch("src.features.agent_integration.agno_runner.build_agent_model"):
         mock_agent_cls.return_value = MagicMock()
         runner._build_agent("gpt-4o-mini", [], "/tmp/wt")
         _, kwargs = mock_agent_cls.call_args
@@ -32,7 +32,7 @@ def test_max_iterations_does_not_increase_config_limit():
     runner = AgnoRunner(config, tools=[], max_iterations=20)
 
     with patch("src.features.agent_integration.agno_runner.Agent") as mock_agent_cls, \
-         patch("src.features.agent_integration.agno_runner.OpenAIChat"):
+         patch("src.features.agent_integration.agno_runner.build_agent_model"):
         mock_agent_cls.return_value = MagicMock()
         runner._build_agent("gpt-4o-mini", [], "/tmp/wt")
         _, kwargs = mock_agent_cls.call_args
@@ -109,3 +109,36 @@ def test_validate_run_test_failed(runner):
 
         assert success is False
         assert tests_passed == 0
+
+
+def test_net_spt_computation(runner):
+    """Verify schema_overhead_tokens and net_spt are correctly calculated."""
+    with patch.object(runner, "_extract_metrics_from_response") as mock_extract, \
+         patch.object(runner, "_validate_run") as mock_validate, \
+         patch("src.features.agent_integration.agno_runner.Agent") as mock_agent_cls, \
+         patch("src.features.agent_integration.agno_runner.build_agent_model"):
+        
+        mock_extract.return_value = {
+            "input_tokens": 1000,
+            "output_tokens": 200,
+            "tool_tokens": 300,
+            "model_calls": 5,
+            "tool_calls": 2,
+            "files_read": 1,
+            "tool_schema_bytes": 400,  # 400/4 = 100 tokens overhead per call
+        }
+        mock_validate.return_value = (True, 1, 0, 10, "passed", True, "", "")
+        
+        mock_agent = MagicMock()
+        mock_agent.run.return_value = MagicMock()
+        mock_agent_cls.return_value = mock_agent
+        
+        metrics = runner.run("task")
+        
+        # total_tokens = 1000 + 200 + 300 = 1500
+        # schema_overhead = int((400 / 4) * 5) = 500
+        assert metrics.schema_overhead_tokens == 500
+        
+        # reasoning_tokens = max(1500 - 500, 1) = 1000
+        # net_spt = 1000.0 / 1000 = 1.0 (since success is True)
+        assert metrics.net_spt == 1.0
