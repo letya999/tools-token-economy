@@ -18,7 +18,7 @@ configs:
   - id: "05_read_only"
     name: "Ablation: Read Only"
     archetype: "ablation"
-    tools: ["read", "write", "edit", "patch", "insert", "append"]
+    tools: ["glob", "read", "write", "edit", "patch", "insert", "append"]
   - id: "06_read_all"
     name: "Ablation: Read All"
     archetype: "ablation"
@@ -46,7 +46,7 @@ configs:
   - id: "12_tree_sitter"
     name: "Ablation: Tree-sitter"
     archetype: "ablation"
-    tools: ["tree_sitter", "read", "write", "edit", "patch", "insert", "append"]
+    tools: ["glob", "tree_sitter", "read", "write", "edit", "patch", "insert", "append"]
   - id: "13_lsp"
     name: "Ablation: LSP Symbols"
     archetype: "ablation"
