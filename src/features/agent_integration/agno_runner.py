@@ -147,22 +147,37 @@ class AgnoRunner:
         counter = self._tool_output_token_counter
         count_tok = self._count_tokens
 
-        async def budget_hook(function_name, function_call, arguments):
-            # PRE: hard cap on accumulated tool-output tokens (read-loop guard).
+        def budget_hook(function_name, function_call, arguments):
+            # PRE: hard cap BEFORE calling — catches read-loops on subsequent calls.
             if counter[0] > max_tool_output_tokens:
                 raise InputCheckError(
                     f"BUDGET_EXCEEDED: accumulated tool output {counter[0]} tokens "
                     f"exceeds {max_tool_output_tokens} — aborting (read-loop detected)"
                 )
-            # Execute the real tool — await if it's an async MCP coroutine.
             result = function_call(**arguments)
             if inspect.iscoroutine(result):
-                result = await result
-            # POST: count output tokens for next call's pre-check.
-            try:
-                counter[0] += count_tok(str(result))
-            except Exception:
-                pass
+                # MCP tool returned a coroutine (async). Wrap so Agno awaits it
+                # in the async execution path while sync path is unaffected.
+                async def _counted():
+                    actual = await result
+                    actual_tok = count_tok(str(actual))
+                    counter[0] += actual_tok
+                    # POST check: catches single-call explosions (e.g. read_all).
+                    if counter[0] > max_tool_output_tokens:
+                        raise InputCheckError(
+                            f"BUDGET_EXCEEDED after {function_name}: "
+                            f"accumulated {counter[0]} tokens exceeds {max_tool_output_tokens}"
+                        )
+                    return actual
+                return _counted()
+            # Sync tool path: count and post-check immediately.
+            tok = count_tok(str(result))
+            counter[0] += tok
+            if counter[0] > max_tool_output_tokens:
+                raise InputCheckError(
+                    f"BUDGET_EXCEEDED after {function_name}: "
+                    f"accumulated {counter[0]} tokens exceeds {max_tool_output_tokens}"
+                )
             return result
 
         return budget_hook
@@ -307,6 +322,7 @@ class AgnoRunner:
             "CRITICAL: NEVER delete, truncate, or overwrite existing code. When adding to an existing file, preserve ALL existing content.",
             "CRITICAL: NEVER remove or replace existing tests. You must ADD new tests at the END of the test file, after all existing tests.",
             "CRITICAL: New tests MUST be written as proper pytest functions: `def test_name():`. NEVER write bare assert statements outside a function body — they cause SyntaxError during pytest collection.",
+            "BASH WRITE RULE: When writing Python code via shell/bash, always use a heredoc that preserves newlines (printf or cat with actual line breaks). NEVER use echo or semicolons to write multi-line Python — it collapses all lines into one and causes SyntaxError. Prefer the edit/append/write tools for file modifications.",
             "CONVERGENCE RULE: After reading 3-5 relevant files you have enough context. STOP exploring and START writing your fix immediately. Do not spend more than half your tool budget on retrieval — the other half must be for writing and verifying.",
             "Read files in LARGE blocks (at least 100-200 lines per read call). Do NOT read the same file in small chunks of 20-30 lines.",
             "Efficiency: Use the shell tool's multi_cmd parameter to run multiple related commands in a single turn.",
