@@ -30,7 +30,6 @@ ENV/
 worktrees/
 results/
 results_*/
-plans/
 .uv/
 .python-version
 
