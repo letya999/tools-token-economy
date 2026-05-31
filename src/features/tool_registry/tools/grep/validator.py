@@ -8,6 +8,8 @@ class GrepValidator(BaseToolValidator):
     platform_install_cmds = {
         "linux": "sudo apt-get install -y grep",
         "wsl": "sudo apt-get install -y grep",
+        "mac": "brew install grep",
+        "windows": "winget install GnuWin32.Grep",
     }
 
     def _get_tool_instance(self, tmp_dir): return GrepTool(tmp_dir)

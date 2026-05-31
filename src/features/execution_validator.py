@@ -176,7 +176,7 @@ class ExecutionValidator:
         return shlex.join(new_tokens)
 
     def _eval_venv_path(self) -> str:
-        # Place eval venv on native Linux fs (not NTFS /mnt/c/) to avoid uv hardlink failures.
+        # Place eval venv under ~ (~/.eval_venvs on Linux/Mac/WSL, %USERPROFILE%/.eval_venvs on Windows)
         run_hash = hashlib.md5(self.worktree_path.encode()).hexdigest()[:12]
         return os.path.expanduser(f"~/.eval_venvs/{run_hash}")
 
@@ -186,6 +186,11 @@ class ExecutionValidator:
         env.pop("UV_PROJECT_ENVIRONMENT", None)
         env.pop("VIRTUAL_ENV", None)
         env.pop("VIRTUAL_ENV_PROMPT", None)
+
+        # On Windows native, uv cannot create hardlinks on NTFS — use copy mode.
+        if sys.platform == "win32":
+            env["UV_LINK_MODE"] = "copy"
+
         venv_path = self._eval_venv_path()
         env["UV_PROJECT_ENVIRONMENT"] = venv_path
         if eval_env:
