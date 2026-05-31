@@ -10,7 +10,14 @@ class TreeSitterTool(BaseTool):
     """Extracts function and class symbols from a Python file via Tree-Sitter AST."""
 
     def __init__(self, worktree_path: str):
-        super().__init__("tree_sitter", "Extracts AST structure from a file (Python only for now)")
+        super().__init__(
+            "tree_sitter",
+            "Extracts function and class names with line numbers from a Python file via AST. "
+            "Requires a known file path — use read tool first to discover candidate files. "
+            "Example: tree_sitter('app/services/admin_auth.py') lists all functions defined there. "
+            "Workflow: (1) use read to explore directories like 'app/', 'src/' to find Python files, "
+            "(2) call tree_sitter on candidate files to see their structure.",
+        )
         self.worktree_path = worktree_path
         self.PY_LANGUAGE = Language(tspython.language())
         self.parser = Parser(self.PY_LANGUAGE)

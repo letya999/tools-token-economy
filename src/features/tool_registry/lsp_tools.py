@@ -13,7 +13,16 @@ class LspSymbolsTool(BaseTool):
     """
 
     def __init__(self, worktree_path: str):
-        super().__init__("lsp_symbols", "Retrieve symbols/definitions using static analysis")
+        super().__init__(
+            "lsp_symbols",
+            "Find where a function or class is defined across the project, or list all symbols in a file. "
+            "TWO modes: "
+            "(1) symbol search — pass symbol=<name> to locate a definition anywhere in the codebase, "
+            "e.g. lsp_symbols(symbol='parse_bearer_token') returns the file path and line number. "
+            "Use this to DISCOVER files when you know a relevant function name. "
+            "(2) file listing — pass file_path=<path> to list all symbols defined in that file. "
+            "ALWAYS try symbol search first when you know the name of the function to fix.",
+        )
         self.worktree_path = os.path.realpath(worktree_path)
 
     def execute(self, symbol: str = "", file_path: str = "") -> ToolResult:
