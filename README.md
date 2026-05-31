@@ -8,6 +8,9 @@ This benchmark runs 21 tool configurations against the same coding task and meas
 
 20 of 21 configs passed (95%). Key findings:
 
+> **Run metadata:** n=1 · model=gpt-4.1-mini · task=medium · 2026-05-30
+> Results below show selected configs sorted by SPT. Full interactive table in the dashboard.
+
 | Config | Tools | Tokens | Cost $ | SPT | Waste% |
 |---|---|---|---|---|---|
 | **08_git_grep** | git\_grep + edit | 12,431 | **$0.0027** | **80.4** | 85.7% |
@@ -21,9 +24,9 @@ This benchmark runs 21 tool configurations against the same coding task and meas
 | 06_read_all | read\_all + edit | 682,478 | $0.0877 | 1.5 | 85.8% |
 
 > **SPT** = Score Per 1K Tokens (higher = more efficient). **Waste%** = fraction of context irrelevant to the task.
-> `03_gemini_like` (read\_all + repo\_map) failed — context explosion from reading the entire repo exceeded the model's usable window.
+> `03_gemini_like` (read\_all + repo\_map) used 682K tokens — agent entered a read loop. Excluded from table due to extreme token cost distorting scale.
 
-**Bottom line:** Targeted search tools (`git_grep`, `rg`, `grep`) massively outperform bulk-read strategies. The Claude Code-like toolset (glob+rg) achieves 58x better token efficiency than read\_all at 28x lower cost.
+**Bottom line:** Targeted search tools (`git_grep`, `rg`, `grep`) use significantly fewer tokens than bulk-read strategies. In this single run, `git_grep` achieved the best SPT score (12K tokens vs 682K for `read_all`). Multi-run aggregation needed for statistical confidence.
 
 ---
 
@@ -73,13 +76,13 @@ cp .env.example .env  # add OPENAI_API_KEY
 
 ### 3. Setup (checks environment, installs deps, dry-runs all 21 configs)
 ```bash
-wsl bash -c "cd /mnt/c/path/to/tools-token-economy && uv run python main.py --setup"
+wsl bash scripts/run_wsl.sh --dry-run
 ```
 Expected: every stage prints `[PASS]`.
 
 ### 4. Run the benchmark
 ```bash
-wsl bash -c "cd /mnt/c/path/to/tools-token-economy && uv run python main.py"
+wsl bash scripts/run_wsl.sh
 ```
 Results: `results/run_TIMESTAMP_*/metrics.json`
 
@@ -116,14 +119,16 @@ Opens at `http://localhost:8501` — 8 tabs, EN/RU language toggle.
 
 | Archetype | Configs | Philosophy |
 |---|---|---|
-| **cursor** | 01 | Repo map + RAG for broad context |
-| **claude** | 02 | Glob + ripgrep for surgical search |
-| **gemini** | 03 | Read all + rg (context-first) |
-| **codex** | 04 | Grep + read (classic Unix) |
+| **cursor** | 01 | Repo map + RAG for broad context (cursor-inspired archetype) |
+| **claude** | 02 | Glob + ripgrep for surgical search (claude-inspired archetype) |
+| **gemini** | 03 | Read all + rg (context-first, gemini-inspired archetype) |
+| **codex** | 04 | Grep + read (classic Unix, codex-inspired archetype) |
 | **ablation** | 05–15 | One search tool at a time (glob, read\_all, grep, git\_grep, rg, ugrep, ast\_grep, tree\_sitter, LSP symbols, repo\_map, simple\_RAG) |
 | **semantic** | 16–17 | Serena MCP / Semble MCP (semantic code understanding) |
 | **hybrid** | 18–20 | Combinations (rg+repo\_map, rg+LSP, Serena+Semble) |
 | **minimal** | 21 | Bash only — no specialised tools |
+
+> Archetype names reflect the tool *philosophy* associated with each coding assistant, not a benchmark of the product itself. Actual Cursor, Claude Code, Gemini, and Codex behavior differs.
 
 ---
 

@@ -7,6 +7,6 @@ Foundational instructions and engineering standards for this repository are defi
 - **[AGENTS.md](./AGENTS.md)**: Core mandates, architecture, and workflow instructions.
 
 ## Key Constraints
-- **Rate Limit**: 10 requests per minute (Gemini 2.5 Flash).
-- **Sequential Only**: No parallel agent execution.
-- **Environment**: WSL2 Ubuntu (Python 3.12+).
+- **Model**: gpt-4.1-mini (default), configurable in `configs/provider.yaml`
+- **Sequential Only**: No parallel agent execution during benchmark runs.
+- **Environment**: WSL2 Ubuntu — use `bash scripts/run_wsl.sh` to launch.
