@@ -133,7 +133,7 @@ class AgnoRunner:
             agno_tools_list.append(make_wrapper(t))
         return agno_tools_list
 
-    def _build_budget_tool_hook(self, max_tool_output_tokens: int = 60_000):
+    def _build_budget_tool_hook(self, max_tool_output_tokens: int = 150_000):
         """Per-tool-call middleware. Fires before AND after each tool call.
 
         Unlike pre_hooks (which fire once per agent.run in Agno), tool_hooks
@@ -350,7 +350,11 @@ class AgnoRunner:
         except Exception:
             self._tool_schema_bytes = 0
 
-        budget_tool_hook = self._build_budget_tool_hook(max_tool_output_tokens=60_000)
+        # read_all floods context (100K+ tokens) — use tighter cap for configs that include it.
+        # All other configs retain the default 150K limit.
+        _has_read_all = any(getattr(t, "name", "") == "read_all" for t in self.tools)
+        _tool_out_limit = 60_000 if _has_read_all else 150_000
+        budget_tool_hook = self._build_budget_tool_hook(max_tool_output_tokens=_tool_out_limit)
 
         return Agent(
             model=OpenAIChat(id=model_id, max_tokens=4096, seed=self.seed if self.seed is not None else 42),
