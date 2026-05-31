@@ -447,7 +447,7 @@ class PreflightChecker:
                 try:
                     proc = subprocess.run(
                         cmd, shell=True, cwd=self.repo_path,
-                        capture_output=True, text=True, timeout=60
+                        capture_output=True, text=True, timeout=120
                     )
                     output = proc.stdout + proc.stderr
                     pass_match = re.search(r"(\d+) passed", output)
