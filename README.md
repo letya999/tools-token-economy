@@ -168,6 +168,25 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full design details and [
 
 ---
 
+## Terminology
+
+| Term | Definition |
+|------|-----------|
+| **Task** | A coding problem: description, target_file, test_cmd, difficulty. e.g. `aging_stale` |
+| **Codebase** | Target repository where agent makes changes. e.g. `process_metrics_platform_v2` |
+| **Config** | One toolset + agent parameters. 21 configs total. e.g. `05_read_only`, `08_git_grep` |
+| **Run** | Single execution of one Config on one Task. Folder `run_{session}_{rep}_{config_id}` |
+| **Rep** (Repetition) | One full pass over all Configs. r001, r002, ... r006 |
+| **Suite** | One Rep = 1 pass × 21 Configs × 1 Task. **Budget unit: $5 per Suite** |
+| **Session** | Full series = N Reps × M Configs. File `session_*_meta.json` |
+
+### Budget Hierarchy
+- **$5.00 per Suite (Rep)**: 21 runs budget.
+- **$0.40 per Agent Run**: Hard cap for agent tokens.
+- **$1.00 per Judge Run**: Hard cap for judge calls.
+
+---
+
 ## Prerequisites
 
 - Python 3.13+, `uv`

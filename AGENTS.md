@@ -25,16 +25,16 @@ and re-run `--setup`. Do not proceed to Phase 2 until all stages pass.
 ```bash
 wsl bash -c "bash /mnt/c/Users/User/a_projects/tools_token_economy/scripts/run_wsl.sh"
 ```
-**Success looks like**: 20 configs run, each logs `Config XX done. Success=True/False`.
+**Success looks like**: 21 Configs run, each logs `Config XX done. Success=True/False`.
 Results appear in `results/run_TIMESTAMP_*/metrics.json`.
 
-Key metrics to check after the run:
+Key metrics to check after the Run:
 - `execution_result`: should be `passed` or `failed`, never `env_error`
-- `success`: True = agent completed the task
+- `success`: True = agent completed the Task
 - `task_solved_score`: LLM judge score 0.0–1.0
 - `retrieval_precision` / `retrieval_recall`: file navigation efficiency
 
-### Phase 3 — Analyse results (optional)
+### Phase 3 — Analyse Results (optional)
 ```bash
 # Interactive 8-tab Streamlit dashboard (recommended)
 uv run streamlit run streamlit_app.py
@@ -48,29 +48,28 @@ uv run python main.py --dashboard
 Language switching (EN/RU) is available in the sidebar.
 
 
-### Multi-Run: Statistical Significance
+### Session: Multi-Run Statistical Significance
 
-Run the same benchmark N times to get stable p75 estimates:
+Run the same Suite (all Configs) N times to get stable p75 estimates:
 
     uv run python main.py --runs 10
 
-All 10 repetitions share a session ID. Results are stored as:
+All 10 Repetitions share a Session ID. Results are stored as:
     results/run_{session_id}_r001_{config_id}/
     results/run_{session_id}_r002_{config_id}/
     ...
     results/session_{session_id}_meta.json
 
-The Streamlit dashboard auto-detects multi-run sessions and shows p75
-aggregated metrics with a "10 runs · p75" badge.
+The Streamlit dashboard auto-detects multi-run Sessions and shows p75
+aggregated metrics with a "10 Rep полных" badge.
 
 Recommended N per use case:
-  - Quick sanity check:      3 runs
-  - Exploratory comparison:  5 runs
-  - Publication-quality:    10 runs
+  - Quick sanity check:      3 Reps
+  - Exploratory comparison:  5 Reps
+  - Publication-quality:    10 Reps
 
-Note: N=10 with 20 configs = 200 agent runs. Budget: ~$2.75 at gpt-4.1-mini rates
-      (based on $0.00275/config median from 2026-05-26 run × 200 = $0.55 for agents
-       + ~$1.40 for 7×200=1400 judge calls = ~$2.00 total estimate).
+Note: Session with N=10 and 21 Configs = 210 Runs.
+      Budget: ~$5.00 per Suite (Rep) × 10 = $50.00 for the full Session.
 
 
 ### Adding a New Config (Tool Strategy)

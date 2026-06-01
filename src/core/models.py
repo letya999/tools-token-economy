@@ -73,7 +73,8 @@ class BenchmarkMeta(BaseModel):
     required_files: list[str] = []
     timeout_sec: int = 600
     max_cost_usd_suite: float = 5.0
-    max_cost_usd_config: float = 0.15
+    max_cost_usd_per_agent_run: float = 0.40
+    max_cost_usd_per_judge_run: float = 1.00
     max_tokens_per_config: int = 500_000
     max_iterations: int = 15
 
@@ -96,6 +97,10 @@ class RunMetrics(BaseModel):
     tool_tokens: int
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    judge_cost_usd: float = 0.0
+    judge_input_tokens: int = 0
+    judge_output_tokens: int = 0
+    judge_skipped: bool = False
     duration_sec: float
     model_calls: int
     tool_calls: int

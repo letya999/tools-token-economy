@@ -383,6 +383,11 @@ class AgnoRunner:
         if response.metrics:
             metrics_data["input_tokens"] = response.metrics.input_tokens or 0
             metrics_data["output_tokens"] = response.metrics.output_tokens or 0
+            metrics_data["cache_read_tokens"] = (
+                getattr(response.metrics, "prompt_cache_hit_tokens", 0) or
+                getattr(response.metrics, "cache_read_input_tokens", 0) or
+                getattr(response.metrics, "cached_tokens", 0) or 0
+            )
 
         if metrics_data["input_tokens"] == 0:
             metrics_data["input_tokens"] = self._count_tokens(task_description)

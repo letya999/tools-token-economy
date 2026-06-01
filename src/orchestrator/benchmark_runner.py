@@ -17,6 +17,7 @@ from src.core.models import (
     ProviderConfig,
     RunMetrics,
     TaskConfig,
+    BenchmarkMeta,
 )
 from src.core.scoring import compute_eval_composite, eval_weights
 from src.features.agent_integration.agno_runner import AgnoRunner
@@ -104,10 +105,27 @@ class BenchmarkOrchestrator:
         self.required_files = self.task_config.required_files
         self.aggregator = MetricsAggregator(self.results_dir)
         self.isolation = _make_isolation_provider(self.repo_path, self.worktree_base)
+
+        # Initialize BenchmarkMeta to centralize limits and settings
+        self.benchmark_meta = BenchmarkMeta(
+            repo=self.codebase_config.name,
+            task=self.task_config.name,
+            test_cmd=self.task_config.test_cmd,
+            target_file=self.task_config.target_file,
+            required_files=self.task_config.required_files,
+            timeout_sec=self.task_config.timeout_sec,
+            max_iterations=self.provider_config.max_steps,
+            max_cost_usd_suite=_kwargs.get("max_suite_usd", 5.0),
+            max_cost_usd_per_agent_run=_kwargs.get("max_config_usd", 0.40),
+            max_cost_usd_per_judge_run=_kwargs.get("max_judge_usd", 1.00),
+            max_tokens_per_config=_kwargs.get("max_tokens_per_config", 500_000),
+        )
+
         self.cost_guard = CostGuard(
-            max_suite_usd=_kwargs.get("max_suite_usd", 8.0),
-            max_config_usd=_kwargs.get("max_config_usd", 0.40),
-            max_tokens_per_config=_kwargs.get("max_tokens_per_config", 600_000),
+            max_suite_usd=self.benchmark_meta.max_cost_usd_suite,
+            max_config_usd=self.benchmark_meta.max_cost_usd_per_agent_run,
+            max_tokens_per_config=self.benchmark_meta.max_tokens_per_config,
+            max_judge_usd_per_run=self.benchmark_meta.max_cost_usd_per_judge_run,
         )
 
         os.makedirs(self.worktree_base, exist_ok=True)
@@ -300,7 +318,11 @@ class BenchmarkOrchestrator:
                         with open(patch_path, encoding="utf-8") as f:
                             patch_content = f.read()
 
-                    judge = LLMJudge(judge_config=self.provider_config.judge)
+                    judge = LLMJudge(
+                        judge_config=self.provider_config.judge,
+                        max_judge_usd=self.benchmark_meta.max_cost_usd_per_judge_run,
+                        run_dir=run_dir
+                    )
                     report = judge.evaluate(
                         task_description=(prefix + task_description) if prefix else task_description,
                         agent_messages=messages_data,
@@ -329,7 +351,18 @@ class BenchmarkOrchestrator:
                         "judge_reasoning_pattern": report.pattern_adherence_reasoning,
                         "judge_reasoning_tool_sequence": report.tool_sequence_reasoning,
                         "judge_model": report.judge_model,
+                        "judge_cost_usd": report.judge_cost_usd,
+                        "judge_input_tokens": report.judge_input_tokens,
+                        "judge_output_tokens": report.judge_output_tokens,
+                        "judge_skipped": report.judge_skipped,
                     })
+
+                    # Record judge cost in CostGuard
+                    self.cost_guard.record_judge(
+                        config.id, 
+                        report.judge_cost_usd, 
+                        report.judge_input_tokens + report.judge_output_tokens
+                    )
                     
                     # Compute composite eval_score
                     judge_scores = {
@@ -489,19 +522,33 @@ class BenchmarkOrchestrator:
             self.session_manager = SessionManager(self.results_dir)
             meta = {
                 "n_runs": self.n_runs,
+                "n_reps_expected": self.n_runs,
+                "n_configs": len(configs),
+                "n_runs_expected": self.n_runs * len(configs),
                 "provider": self.provider_config.provider,
                 "model": self.provider_config.model,
                 "task": self.task_config.name,
+                "task_name": self.task_config.name,
+                "task_description": self.task_config.description,
+                "task_difficulty": self.task_config.difficulty,
+                "task_test_cmd": self.task_config.test_cmd,
                 "codebase": self.codebase_config.name,
+                "codebase_name": self.codebase_config.name,
+                "judge_model": self.provider_config.judge.model,
                 "percentile": 75,
                 "start_time": timestamp,
                 "n_completed": 0,
+                "n_runs_completed": 0,
+                "n_reps_completed": 0,
+                "coverage_pct": 0.0,
                 "status": "running"
             }
             self.session_manager.create_session(session_id, meta)
 
+            n_total_completed = 0
             for rep in range(1, self.n_runs + 1):
                 self.logger.info("Starting Repetition %d/%d", rep, self.n_runs)
+                rep_completed = 0
                 for config in configs:
                     try:
                         self.cost_guard.check_suite_budget(config.id)
@@ -519,6 +566,8 @@ class BenchmarkOrchestrator:
                     
                     try:
                         self._run_single_config(config, run_id, self.task_config.description, baseline_pass_count)
+                        n_total_completed += 1
+                        rep_completed += 1
                     finally:
                         # Restore original seed
                         self.provider_config.seed = orig_seed
@@ -527,14 +576,25 @@ class BenchmarkOrchestrator:
                         self.logger.info("Sleeping 5s...")
                         time.sleep(5)
                 
-                self.session_manager.update_session(session_id, {"n_completed": rep})
+                self.cost_guard.reset_suite()
+                
+                # Update session progress
+                n_expected = self.n_runs * len(configs)
+                coverage = (n_total_completed / n_expected * 100) if n_expected > 0 else 0
+                self.session_manager.update_session(session_id, {
+                    "n_completed": rep, # legacy field
+                    "n_reps_completed": rep if rep_completed == len(configs) else rep - 1,
+                    "n_runs_completed": n_total_completed,
+                    "coverage_pct": coverage
+                })
             
+            n_expected = self.n_runs * len(configs)
             self.session_manager.update_session(session_id, {
-                "status": "complete",
+                "status": "complete" if n_total_completed == n_expected else "partial",
                 "end_time": time.strftime("%Y%m%d_%H%M%S")
             })
             
-            self.logger.info("Multi-run benchmark suite completed.")
+            self.logger.info("Multi-run benchmark suite completed. Total session cost: $%.3f", self.cost_guard.session_total_cost)
             aggregated_results = self.aggregator.generate_session_rankings(session_id)
             self.logger.info("Session Rankings generated:\n%s", aggregated_results)
             

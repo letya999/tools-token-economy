@@ -25,6 +25,7 @@ wheels/
 .venv/
 venv/
 ENV/
+.venv/pyvenv.cfg
 
 # Project specific
 worktrees/

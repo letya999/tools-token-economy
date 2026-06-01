@@ -57,6 +57,19 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ascending": "Ascending",
         "select_config": "Select config",
         "search_placeholder": "Search metric name or description",
+        "ranked_results": "Ranked Results (Significance-Aware)",
+        "not_ranked_results": "Not Ranked (Unstable / Insufficient Data)",
+        "single_run_warning": "⚠️ **SINGLE RUN SESSION** — Results lack statistical significance. Run with `--runs 5` or more.",
+        "download_csv": "📥 Download Aggregated Results (CSV)",
+        "judge_calls": "Judge Calls",
+        "judge_calls_header": "Вызовы судьи / Judge Calls",
+        "terminology_header": "Терминология / Terminology",
+        "col_rank": "Rank",
+        "col_band": "Band",
+        "col_status": "Status",
+        "col_runs": "Runs",
+        "stat_summary": "Statistical Summary",
+        "spt_zero_warning": "⚠️ All configurations failed the task or judge did not run.",
         # leaderboard
         "leaderboard_header": "Leaderboard",
         "col_config": "Config",
@@ -129,7 +142,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         # all metrics
         "all_metrics_tab_header": "All Metrics — Complete View",
         "all_metrics_tab_caption": "Every single RunMetrics field for every config in the selected run, side-by-side.",
-        "stat_summary": "Statistical Summary",
         # deep dive
         "deep_dive_header": "Configuration Deep Dive",
         "judge_dims_vs_median": "Judge Dimensions vs Median",
@@ -166,6 +178,19 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ascending": "По возрастанию",
         "select_config": "Выбрать конфиг",
         "search_placeholder": "Поиск по названию или описанию метрики",
+        "ranked_results": "Ранжированные результаты (с учётом значимости)",
+        "not_ranked_results": "Не ранжированы (нестабильные / недостаточно данных)",
+        "single_run_warning": "⚠️ **SINGLE RUN SESSION** — Результаты не имеют статистической значимости. Запустите с `--runs 5` или более.",
+        "download_csv": "📥 Скачать агрегированные результаты (CSV)",
+        "judge_calls": "Вызовы судьи",
+        "judge_calls_header": "Вызовы судьи / Judge Calls",
+        "terminology_header": "Терминология / Terminology",
+        "col_rank": "Место",
+        "col_band": "Группа",
+        "col_status": "Статус",
+        "col_runs": "Ранов",
+        "stat_summary": "Статистическая сводка",
+        "spt_zero_warning": "⚠️ Все конфигурации не решили задачу или судья не запускался.",
         # leaderboard
         "leaderboard_header": "Таблица лидеров",
         "col_config": "Конфиг",
@@ -238,7 +263,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         # all metrics
         "all_metrics_tab_header": "Все метрики — полный вид",
         "all_metrics_tab_caption": "Все поля RunMetrics по каждому конфигу выбранного запуска.",
-        "stat_summary": "Статистический обзор",
         # deep dive
         "deep_dive_header": "Детальный разбор конфига",
         "judge_dims_vs_median": "Дименшны судьи vs медиана",
@@ -246,6 +270,27 @@ _STRINGS: dict[str, dict[str, str]] = {
         "no_patch_deep": "Патч недоступен.",
     },
 }
+
+_column_names = {
+    "en": {
+        "rank": "Rank", "tie_band": "Band", "config_name": "Config",
+        "_validity_status": "Status", "n_runs_completed": "Runs",
+        "eval_score": "Eval", "total_tokens": "Tokens", "cost_usd": "Cost $",
+        "net_spt": "SPT",
+    },
+    "ru": {
+        "rank": "Место", "tie_band": "Группа", "config_name": "Конфигурация",
+        "_validity_status": "Статус", "n_runs_completed": "Ранов",
+        "eval_score": "Оценка", "total_tokens": "Токены", "cost_usd": "Стоимость $",
+        "net_spt": "SPT",
+    }
+}
+
+_STATUS_MAP = {
+    "en": {"ok": "ok", "low_confidence": "low confidence", "unstable": "unstable", "insufficient_data": "insufficient data"},
+    "ru": {"ok": "норма", "low_confidence": "низкая уверенность", "unstable": "нестабильно", "insufficient_data": "мало данных"}
+}
+
 
 
 def _t(key: str, **kwargs) -> str:
@@ -271,6 +316,38 @@ task_cfg     = _load_yaml("configs/tasks/medium.yaml")
 codebase_cfg = _load_yaml("configs/codebase.yaml")
 tools_cfg    = _load_yaml("configs/tools.yaml")
 weights_cfg  = _load_yaml("configs/benchmark_weights.yaml")
+
+
+# ── Helper Functions ─────────────────────────────────────────────────────────
+
+def _show_judge_log(run_path: Path):
+    log_path = run_path / "judge_log.json"
+    if not log_path.exists():
+        st.caption(_t("no_reasoning"))
+        return
+    
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            log = json.load(f)
+        
+        total_cost = sum(item.get("cost_usd", 0) for item in log if "cost_usd" in item)
+        st.write(f"**{_t('judge_calls_header')}:** ${total_cost:.5f}")
+        
+        for item in log:
+            crit = item.get("criterion", "unknown")
+            score = item.get("score", 0.0)
+            reasoning = item.get("reasoning", "")
+            
+            with st.expander(f"{crit} (Score: {score})"):
+                st.write(f"**Reasoning:** {reasoning}")
+                if "input_tokens" in item:
+                    st.write(f"**Tokens:** {item.get('input_tokens')} in / {item.get('output_tokens')} out")
+                if "cost_usd" in item:
+                    st.write(f"**Cost:** ${item.get('cost_usd', 0):.6f}")
+                if "error" in item:
+                    st.error(f"Error: {item['error']}")
+    except Exception as e:
+        st.error(f"Failed to load judge log: {e}")
 
 
 # ── Data ──────────────────────────────────────────────────────────────────────
@@ -385,6 +462,19 @@ for s in all_sessions:
 selected_label = st.sidebar.selectbox(_t("run_timestamp"), session_options)
 selected_session = session_map[selected_label]
 selected_ts = selected_session["session_id"]
+
+# Task Info in Sidebar
+task_name = selected_session.get("task_name", selected_session.get("task", "—"))
+task_diff = selected_session.get("task_difficulty", "—")
+codebase = selected_session.get("codebase_name", selected_session.get("codebase", "—"))
+
+diff_icons = {"hard": "🔴", "medium": "🟡", "easy": "🟢"}
+icon = diff_icons.get(task_diff.lower(), "⚪")
+
+st.sidebar.markdown(f"**Task:** {task_name} ({icon} {task_diff})")
+st.sidebar.markdown(f"**Repo:** {codebase}")
+st.sidebar.caption(f"📁 {_ROOT / 'results'}")
+
 is_multi_run = not selected_session.get("is_pseudo") and selected_session.get("n_runs", 1) > 1
 
 filter_mode = st.sidebar.radio(_t("status_label"),
@@ -394,7 +484,22 @@ filter_mode = st.sidebar.radio(_t("status_label"),
 fdf_raw = df[df["timestamp"] == selected_ts].copy()
 
 if is_multi_run:
-    st.sidebar.info(f"📊 {selected_session.get('n_runs')} runs · p75 aggregation")
+    n_expected = selected_session.get("n_runs_expected", selected_session.get("n_runs", 0) * selected_session.get("n_configs", 0))
+    n_completed = selected_session.get("n_runs_completed", 0)
+    reps_expected = selected_session.get("n_reps_expected", selected_session.get("n_runs", 0))
+    reps_completed = selected_session.get("n_reps_completed", 0)
+    coverage = selected_session.get("coverage_pct", (n_completed / n_expected * 100) if n_expected > 0 else 0)
+    
+    color = "green" if coverage >= 80 else "orange" if coverage >= 50 else "red"
+    
+    st.sidebar.markdown(f"""
+    <div style='color: {color};'>
+    📊 {n_completed}/{n_expected} ранов завершено<br/>
+    {reps_completed}/{reps_expected} Rep полных · coverage {coverage:.0f}%<br/>
+    p75 агрегация
+    </div>
+    """, unsafe_allow_code=True)
+    
     # Aggregate data
     agg = aggregate_session(str(_ROOT / "results"), selected_ts, percentile=75)
     rows = []
@@ -441,7 +546,8 @@ st.sidebar.metric(_t("pass_rate"), f"{fdf['success'].mean()*100:.0f}%" if len(fd
 # TAB 1 — Leaderboard
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab1:
-    st.header(f"{_t('leaderboard_header')} — {selected_ts}")
+    header_suffix = f"{task_name} ({task_diff})" if task_name != "—" else selected_ts
+    st.header(f"{_t('leaderboard_header')} — {header_suffix} — {selected_ts}")
     
     if not is_multi_run:
         st.warning("⚠️ **SINGLE RUN SESSION** — Results lack statistical significance. Run with `--runs 5` or more to enable tie-bands and reliability checks.")
@@ -462,7 +568,7 @@ with tab1:
                 df_["config_name"] = df_.get("config_id_full", pd.Series([""] * len(df_)))
 
         if not rdf.empty:
-            st.subheader("Ranked Results (Significance-Aware)")
+            st.subheader(_t("ranked_results"))
 
             # Display net_spt with CI
             if is_multi_run:
@@ -484,25 +590,46 @@ with tab1:
                 optional_cols.append("n_runs_completed")
             cols_to_show.extend(optional_cols)
             
-            st.dataframe(rdf[cols_to_show], use_container_width=True, hide_index=True)
+            # Localize columns (Block 4.2)
+            lang = st.session_state.get("lang", "en")
+            display_df = rdf[cols_to_show].rename(columns=_column_names.get(lang, {}))
+            
+            # Localize status values
+            status_col = _column_names[lang].get("_validity_status", "_validity_status")
+            if status_col in display_df.columns:
+                display_df[status_col] = display_df[status_col].map(lambda x: _STATUS_MAP[lang].get(x, x))
+
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+            if (rdf["net_spt"] == 0).all():
+                st.warning(_t("spt_zero_warning"))
             
             # CSV Export
             csv = rdf.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Download Aggregated Results (CSV)",
+                label=_t("download_csv"),
                 data=csv,
                 file_name=f"benchmark_{selected_ts}_aggregated.csv",
                 mime='text/csv',
             )
 
         if not nrdf.empty:
-            st.subheader("Not Ranked (Unstable / Insufficient Data)")
+            st.subheader(_t("not_ranked_results"))
             nr_cols = ["config_name"]
             if "_validity_status" in nrdf.columns:
                 nr_cols.append("_validity_status")
             if "n_runs_completed" in nrdf.columns:
                 nr_cols.append("n_runs_completed")
-            st.dataframe(nrdf[nr_cols], use_container_width=True, hide_index=True)
+            
+            lang = st.session_state.get("lang", "en")
+            nr_display_df = nrdf[nr_cols].rename(columns=_column_names.get(lang, {}))
+            
+            # Localize status values
+            status_col = _column_names[lang].get("_validity_status", "_validity_status")
+            if status_col in nr_display_df.columns:
+                nr_display_df[status_col] = nr_display_df[status_col].map(lambda x: _STATUS_MAP[lang].get(x, x))
+
+            st.dataframe(nr_display_df, use_container_width=True, hide_index=True)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -563,6 +690,17 @@ with tab2:
                     with rc[i % 2]: st.markdown(f"*{l}:* {txt}")
             else:
                 st.caption(_t("no_reasoning"))
+
+            # Judge Calls (Block 2.2)
+            st.markdown("---")
+            st.markdown(f"**{_t('judge_calls')}**")
+            run_id_clean = row['config_id_full']
+            run_folder = f"run_{selected_ts}_{run_id_clean}"
+            if is_multi_run:
+                run_folder = f"run_{selected_ts}_r001_{run_id_clean}"
+            
+            _show_judge_log(_ROOT / "results" / run_folder)
+
             patch = row.get("final_patch", "")
             if patch and patch not in ("Patch file not found.", "No patch available."):
                 st.markdown(f"**{_t('code_diff')}**")
@@ -734,6 +872,20 @@ with tab6:
     st.header(_t("glossary_header"))
     st.caption(_t("glossary_caption"))
 
+    # Terminology Section (Block 7.3)
+    st.subheader(_t("terminology_header"))
+    with st.expander("Task → Config → Run → Rep (Suite) → Session", expanded=True):
+        st.markdown("""
+| Term | Definition |
+|------|-----------|
+| **Task** | A coding problem: description, target_file, test_cmd, difficulty. |
+| **Config** | One toolset + agent parameters (e.g. `08_git_grep`). |
+| **Run** | Single execution of one Config on one Task. |
+| **Rep (Suite)** | One full pass over all Configs (21 Runs). |
+| **Session** | Full series of repetitions (N Reps × M Configs). |
+| **Budget** | $5.00 per Suite (Rep), $0.40 per Agent Run, $1.00 per Judge Run. |
+""")
+
     # field → (range, direction, where_shown, EN_description)
     GLOSSARY: dict[str, dict[str, tuple]] = {
         "Eval Judge Scores": {
@@ -876,6 +1028,15 @@ with tab7:
                     with rc[i%2]: st.markdown(f"*{l}:* {txt}")
             else:
                 st.info(_t("no_reasoning_deep"))
+        
+        # Judge Calls (Block 2.2)
+        with st.expander(_t("judge_calls")):
+            run_id_clean = row['config_id_full']
+            run_folder = f"run_{selected_ts}_{run_id_clean}"
+            if is_multi_run:
+                run_folder = f"run_{selected_ts}_r001_{run_id_clean}"
+            _show_judge_log(_ROOT / "results" / run_folder)
+
         with st.expander(_t("code_diff")):
             p = row.get("final_patch","")
             st.code(p if p else _t("no_patch_deep"), language="diff")
