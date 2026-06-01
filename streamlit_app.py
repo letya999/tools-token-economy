@@ -498,7 +498,7 @@ if is_multi_run:
     {reps_completed}/{reps_expected} Rep полных · coverage {coverage:.0f}%<br/>
     p75 агрегация
     </div>
-    """, unsafe_allow_code=True)
+    """, unsafe_allow_html=True)
     
     # Aggregate data
     agg = aggregate_session(str(_ROOT / "results"), selected_ts, percentile=75)
