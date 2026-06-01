@@ -185,7 +185,7 @@ class BenchmarkOrchestrator:
             dry_run=self.dry_run,
             selected_ids=selected_ids,
             target_file=self.task_config.target_file,
-            target_test=self.task_config.target_file,
+            target_test=self.task_config.target_test or self.task_config.target_file,
             required_files=self.required_files,
             provider_cfg=self.provider_config,
         )

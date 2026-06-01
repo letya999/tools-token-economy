@@ -7,13 +7,16 @@ description: |
   2. Modifying the authorization URL to include code_challenge and method
   3. Implementing the token exchange with code_verifier
   4. Adding comprehensive unit tests for all new code paths
-  Use your retrieval tools to understand the existing OAuth implementation first.
+  Use your retrieval tools to understand the existing OAuth implementation in
+  app/services/google_auth.py and app/api/admin.py first.
   Finalize by calling write/patch to save changes and output: TASK_COMPLETE.
 test_cmd: "uv run --extra dev pytest tests/unit/ -q"
 timeout_sec: 1800
-target_file: "src/api/google_oauth.py"
+target_file: "app/services/google_auth.py"
+target_test: "tests/unit/test_google_auth_service.py"
 required_files:
-  - "src/api/google_oauth.py"
+  - "app/services/google_auth.py"
+  - "app/api/admin.py"
   - "tests/unit/test_api_google_oauth.py"
 success_criteria:
   - "PKCE flow tests pass"

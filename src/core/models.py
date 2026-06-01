@@ -50,6 +50,7 @@ class TaskConfig(BaseModel):
     test_cmd: str = "uv run --extra dev pytest tests/unit/ -q"
     timeout_sec: int = 1200
     target_file: str | None = None
+    target_test: str | None = None
     required_files: list[str] = []
     success_criteria: list[str] = []
 
