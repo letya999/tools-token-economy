@@ -51,6 +51,13 @@ coverage.xml
 
 # Tool/Agent specific
 .claude/
+.playwright-mcp/
+
+# Plan files (internal flow-agent plans, not for repo)
+plans/
+
+# Export artifacts
+*.csv
 
 # Temporary artifacts from testing
 C/
