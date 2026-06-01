@@ -17,7 +17,7 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import Literal
 
-from src.core.models import AgentConfig
+from src.core.models import AgentConfig, ProviderConfig
 
 _log = logging.getLogger(__name__)
 
@@ -146,6 +146,7 @@ class PreflightChecker:
         target_file: str | None = None,
         target_test: str | None = None,
         required_files: list[str] | None = None,
+        provider_cfg: ProviderConfig | None = None,
     ):
         self.repo_path = os.path.abspath(repo_path)
         self.test_cmd = test_cmd
@@ -153,6 +154,7 @@ class PreflightChecker:
         self.target_file = target_file
         self.target_test = target_test
         self.required_files = required_files or []
+        self.provider_cfg = provider_cfg
 
         # Only check deps for configs that will actually run
         if selected_ids:
@@ -171,6 +173,7 @@ class PreflightChecker:
             self._check_tool_cli_deps,
             self._check_tool_smoke_tests,
             self._check_api_keys,
+            self._check_models_exist,
             self._check_target_repo,
             self._check_target_deps,
             self._check_target_file_and_baseline,
@@ -364,6 +367,121 @@ class PreflightChecker:
                 detail="" if found else f"Set one of: {', '.join(candidates)}",
             ))
         return results
+
+    def _check_models_exist(self) -> list[PreflightResult]:
+        """Verify that the agent and judge models actually exist on the provider platforms."""
+        if self.dry_run:
+            return [PreflightResult(
+                name="Model existence checks",
+                passed=True,
+                level="info",
+                detail="Skipped in dry-run mode",
+            )]
+
+        if not self.provider_cfg:
+            return []
+
+        # Collect unique (provider, model, api_key_env) to check
+        to_check = []
+        # Agent model
+        to_check.append((self.provider_cfg.provider, self.provider_cfg.model, self.provider_cfg.api_key_env))
+        # Judge model
+        to_check.append((self.provider_cfg.judge.provider, self.provider_cfg.judge.model, self.provider_cfg.judge.api_key_env))
+
+        # Filter duplicates
+        seen = set()
+        unique_checks = []
+        for p, m, k in to_check:
+            if (p, m) not in seen:
+                unique_checks.append((p, m, k))
+                seen.add((p, m))
+
+        results = []
+        for provider, model_id, api_key_env in unique_checks:
+            if provider == "openai":
+                results.append(self._verify_openai_model(model_id, api_key_env))
+            elif provider == "anthropic":
+                results.append(self._verify_anthropic_model(model_id, api_key_env))
+            else:
+                results.append(PreflightResult(
+                    name=f"Model check: {model_id}",
+                    passed=True,
+                    level="info",
+                    detail=f"Verification not implemented for provider '{provider}'",
+                ))
+        return results
+
+    def _verify_openai_model(self, model_id: str, api_key_env: str) -> PreflightResult:
+        import openai as _openai
+        api_key = os.getenv(api_key_env)
+        if not api_key:
+            return PreflightResult(
+                name=f"Model exists: {model_id}",
+                passed=False,
+                level="critical",
+                detail=f"Missing API key '{api_key_env}' to verify model",
+            )
+        
+        try:
+            client = _openai.OpenAI(api_key=api_key)
+            client.models.retrieve(model_id)
+            return PreflightResult(
+                name=f"Model exists: {model_id}",
+                passed=True,
+                level="critical",
+                detail="OK",
+            )
+        except _openai.NotFoundError:
+            return PreflightResult(
+                name=f"Model exists: {model_id}",
+                passed=False,
+                level="critical",
+                detail=f"Model '{model_id}' not found on OpenAI. Check provider.yaml.",
+            )
+        except Exception as e:
+            return PreflightResult(
+                name=f"Model exists: {model_id}",
+                passed=False,
+                level="critical",
+                detail=f"Could not verify model '{model_id}': {e}",
+            )
+
+    def _verify_anthropic_model(self, model_id: str, api_key_env: str) -> PreflightResult:
+        # Anthropic doesn't have a simple 'retrieve' but we can list and check
+        import anthropic as _anthropic
+        api_key = os.getenv(api_key_env)
+        if not api_key:
+            return PreflightResult(
+                name=f"Model exists: {model_id}",
+                passed=False,
+                level="critical",
+                detail=f"Missing API key '{api_key_env}' to verify model",
+            )
+        
+        try:
+            client = _anthropic.Anthropic(api_key=api_key)
+            models = client.models.list()
+            ids = [m.id for m in models.data]
+            if model_id in ids:
+                 return PreflightResult(
+                    name=f"Model exists: {model_id}",
+                    passed=True,
+                    level="critical",
+                    detail="OK",
+                )
+            return PreflightResult(
+                name=f"Model exists: {model_id}",
+                passed=False,
+                level="critical",
+                detail=f"Model '{model_id}' not found on Anthropic. Check provider.yaml.",
+            )
+        except Exception as e:
+            return PreflightResult(
+                name=f"Model exists: {model_id}",
+                passed=False,
+                level="critical",
+                detail=f"Could not verify model '{model_id}': {e}",
+            )
 
     def _check_target_repo(self) -> list[PreflightResult]:
         results = []

@@ -1,0 +1,19 @@
+difficulty: medium
+name: "optimize_polars_query"
+description: |
+  The weekly period calculation in `pipelines/calculations/throughput.py` uses manual duration subtraction. This can be optimized and made more idiomatic using Polars' native date truncation features.
+  
+  Task:
+  1. Refactor the `week_start_date` calculation in `calculate_generic_throughput` function within `pipelines/calculations/throughput.py` to use `pl.col("completion_date").dt.truncate("1w")`.
+  2. Ensure the results remain consistent (Monday as the start of the week).
+  3. Verify that all tests in `tests/unit/test_throughput.py` pass.
+test_cmd: "uv run pytest tests/unit/test_throughput.py -q"
+timeout_sec: 600
+target_file: "pipelines/calculations/throughput.py"
+required_files:
+  - "pipelines/calculations/throughput.py"
+  - "tests/unit/test_throughput.py"
+success_criteria:
+  - "Code uses `dt.truncate('1w')` for week start calculation."
+  - "Manual duration subtraction is removed."
+  - "All unit tests pass."

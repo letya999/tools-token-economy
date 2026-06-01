@@ -24,7 +24,7 @@ class McpServerConfig:
 
 class JudgeConfig(BaseModel):
     provider: str = "openai"
-    model: str = "gpt-5.1-mini"
+    model: str = "gpt-5.4-nano"
     api_base: str = ""
     api_key_env: str = "OPENAI_API_KEY"
     temperature: float = 0.0
@@ -46,6 +46,7 @@ class TaskConfig(BaseModel):
     difficulty: str = "medium"
     name: str = ""
     description: str = ""
+    category: str = ""
     test_cmd: str = "uv run --extra dev pytest tests/unit/ -q"
     timeout_sec: int = 1200
     target_file: str | None = None
@@ -138,12 +139,28 @@ class RunMetrics(BaseModel):
     agent_runaway: bool = False
     telemetry_ok: bool = True
     schema_overhead_tokens: int = 0
-    net_spt: float = 0.0
 
     @computed_field
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens + self.tool_tokens
+
+    @computed_field
+    @property
+    def net_spt(self) -> float:
+        """
+        SCHEMA-FAIR headline efficiency metric.
+        Successes per 1K reasoning tokens (adjusted for tool schema overhead).
+        Uses graded task_solved_score (0.0 to 1.0).
+        """
+        reasoning_tokens = max(self.total_tokens - self.schema_overhead_tokens, 1)
+        
+        # Gradual SPT logic (matches success_per_token)
+        base_score = self.task_solved_score
+        if base_score == 0.0 and self.success:
+            base_score = 1.0
+            
+        return (base_score * 1000.0) / reasoning_tokens
 
     @computed_field
     @property

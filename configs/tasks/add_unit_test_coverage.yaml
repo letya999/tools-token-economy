@@ -1,0 +1,19 @@
+difficulty: easy
+name: "add_unit_test_coverage"
+description: |
+  The `estimation` calculation module needs a new summary metric.
+  
+  Task:
+  1. Implement a new function `calculate_average_estimation_by_type(issues_df: pl.DataFrame, field_values_df: pl.DataFrame, sp_field_key_id: str) -> pl.DataFrame` in `pipelines/calculations/estimation.py`.
+  2. The function should join issues with their story point values and calculate the average story points grouped by `type_name`.
+  3. The resulting DataFrame should have `type_name` and `avg_sp` columns.
+  4. Add a unit test `test_calculate_average_estimation_by_type` in `tests/unit/test_estimation.py` to verify this new logic.
+test_cmd: "uv run pytest tests/unit/test_estimation.py -q"
+timeout_sec: 600
+target_file: "pipelines/calculations/estimation.py"
+required_files:
+  - "pipelines/calculations/estimation.py"
+  - "tests/unit/test_estimation.py"
+success_criteria:
+  - "New function `calculate_average_estimation_by_type` exists and works correctly."
+  - "New test case `test_calculate_average_estimation_by_type` passes."

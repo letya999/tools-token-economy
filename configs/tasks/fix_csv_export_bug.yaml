@@ -1,0 +1,21 @@
+difficulty: medium
+name: "fix_csv_export_bug"
+description: |
+  The `validate_clean_issue` function in `pipelines/utils/transformations.py` is too strict when validating `story_points`.
+  It currently fails if `story_points` is a string (e.g., "5.0"), even if that string represents a valid number.
+  Jira sometimes provides story points as strings in its API responses.
+  
+  Task:
+  1. Modify `validate_clean_issue` in `pipelines/utils/transformations.py` to allow `story_points` to be either a numeric type (int, float) OR a string that can be successfully cast to a float.
+  2. If it's a string, it should be validated as a numeric string.
+  3. Ensure that all tests in `tests/unit/test_transformations.py` pass, and add a new test case `test_validate_numeric_string_story_points` to `TestValidateCleanIssue` to verify this fix.
+test_cmd: "uv run pytest tests/unit/test_transformations.py -q"
+timeout_sec: 600
+target_file: "pipelines/utils/transformations.py"
+required_files:
+  - "pipelines/utils/transformations.py"
+  - "tests/unit/test_transformations.py"
+success_criteria:
+  - "`validate_clean_issue` now accepts numeric strings for `story_points`."
+  - "Invalid (non-numeric) strings still fail validation."
+  - "All unit tests pass."

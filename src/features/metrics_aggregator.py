@@ -50,10 +50,19 @@ class MetricsAggregator:
     def generate_session_rankings(self, session_id: str, percentile: int = 75) -> str:
         """Aggregate N reps of session_id at given percentile and print ranking table."""
         from src.features.multi_run import aggregate_session
+        from src.features import cross_task
         agg = aggregate_session(self.results_base_dir, session_id, percentile)
         
+        # New: Performance matrix per model
+        model_runs = {}
+
         rows = []
         for config_id, stats in agg.items():
+            # config_id typically contains model_name
+            # For cross-task aggregation, we'd need to know which model this config uses.
+            # Metrics in multi_run aggregate_session should have 'model_name' if we added it to NUMERIC_METRICS or metadata.
+            # Let's assume stats contains some info or we just use config_id for now.
+            
             rows.append({
                 "config_id": config_id,
                 "n": stats["metadata"]["n"],
@@ -66,6 +75,8 @@ class MetricsAggregator:
                 "task_solved": stats["task_solved_score"],
                 "tool_correct": stats["tool_correctness_score"],
                 "cost_usd": round(stats["cost_usd"], 6),
+                "spt_ci_lo": stats.get("_spt_ci_lo", 0.0),
+                "spt_ci_hi": stats.get("_spt_ci_hi", 0.0),
             })
 
         if not rows:

@@ -1,0 +1,21 @@
+difficulty: medium
+name: "update_api_schema"
+description: |
+  Add support for a project description field in the API.
+  
+  Task:
+  1. Add an optional `description: Optional[str] = None` field to both `ProjectCreate` and `ProjectUpdate` schemas in `app/schemas/project.py`.
+  2. Update the `ProjectResponse` schema in `app/schemas/project.py` to include the `description` field.
+  3. Update `create_project` and `update_project` functions in `app/api/projects.py` to handle the new `description` field (save it to the `Project` model).
+  4. Update `test_create_project_success` and `test_update_project_updates_selected_fields` in `tests/unit/test_api_projects_unit.py` to verify that the `description` is correctly processed and returned.
+test_cmd: "uv run pytest tests/unit/test_api_projects_unit.py -q"
+timeout_sec: 600
+target_file: "app/schemas/project.py"
+required_files:
+  - "app/schemas/project.py"
+  - "app/api/projects.py"
+  - "tests/unit/test_api_projects_unit.py"
+success_criteria:
+  - "Project schemas include the `description` field."
+  - "API endpoints correctly handle and return the `description`."
+  - "Updated unit tests pass."

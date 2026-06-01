@@ -9,7 +9,6 @@ from src.features.stats import (
     coefficient_of_variation, bootstrap_ci, median, run_validity_status,
     STATUS_OK, STATUS_LOW_CONFIDENCE, STATUS_INSUFFICIENT_DATA, STATUS_UNSTABLE,
 )
-
 NUMERIC_METRICS = [
     "eval_score",
     "input_tokens",

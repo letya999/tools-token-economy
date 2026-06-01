@@ -1,0 +1,15 @@
+# Global benchmark budget limits
+# Enforced by CostGuard
+
+global_budget_usd: 50.0
+
+model_limits:
+  gpt-4.1-mini:
+    max_usd_per_run: 0.50
+    max_tokens_per_run: 500000
+  gemini-2.5-flash:
+    max_usd_per_run: 0.10
+    max_tokens_per_run: 1000000
+  claude-3-5-sonnet:
+    max_usd_per_run: 1.00
+    max_tokens_per_run: 200000

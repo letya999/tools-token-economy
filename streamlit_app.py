@@ -17,6 +17,8 @@ import plotly.graph_objects as go
 import streamlit as st
 import yaml
 from src.features.multi_run import list_sessions, aggregate_session
+from src.features.significance import rank_with_tiebands, partition_by_status
+from src.features.stats import STATUS_OK, STATUS_LOW_CONFIDENCE
 
 # ── Project root (absolute, independent of CWD) ───────────────────────────────
 _ROOT = Path(__file__).parent
@@ -440,50 +442,67 @@ st.sidebar.metric(_t("pass_rate"), f"{fdf['success'].mean()*100:.0f}%" if len(fd
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab1:
     st.header(f"{_t('leaderboard_header')} — {selected_ts}")
-    if is_multi_run:
-        st.caption(f"Showing p75 across {selected_session.get('n_runs')} runs (session {selected_ts})")
+    
+    if not is_multi_run:
+        st.warning("⚠️ **SINGLE RUN SESSION** — Results lack statistical significance. Run with `--runs 5` or more to enable tie-bands and reliability checks.")
     
     if fdf.empty:
         st.info(_t("no_data"))
     else:
-        cols_to_use = [
-            "config_id_full", "success", "eval_score", "total_tokens", "cost_usd",
-            "success_per_token", "time_to_target", "context_waste_ratio", "agent_cycles",
-        ]
-        if is_multi_run:
-            cols_to_use.append("n_runs_completed")
-            cols_to_use.append("success_rate")
+        # Partition and Rank
+        ranked_raw, not_ranked = partition_by_status(fdf.to_dict('records'))
+        ranked = rank_with_tiebands(ranked_raw, "net_spt", "_spt_ci_lo", "_spt_ci_hi")
 
-        lb = fdf[cols_to_use].copy()
-        
-        if is_multi_run:
-            lb["Succ/N"] = lb.apply(lambda r: f"{int(round(r['success_rate'] * r['n_runs_completed']))}/{int(r['n_runs_completed'])}", axis=1)
-            # Reorder columns to put Succ/N after success
-            cols = lb.columns.tolist()
-            # Find success column index
-            idx = cols.index("success")
-            # Move Succ/N to idx + 1
-            succ_n = cols.pop(cols.index("Succ/N"))
-            cols.insert(idx + 1, succ_n)
-            lb = lb[cols]
+        rdf = pd.DataFrame(ranked)
+        nrdf = pd.DataFrame(not_ranked)
 
-        lb["context_waste_ratio"] = lb["context_waste_ratio"].apply(lambda x: f"{float(x)*100:.1f}%")
-        
-        # Mapping column names
-        col_map = {
-            "config_id_full": _t("col_config"),
-            "success": _t("col_pass"),
-            "eval_score": _t("col_eval"),
-            "total_tokens": _t("col_tokens"),
-            "cost_usd": _t("col_cost"),
-            "success_per_token": _t("col_spt"),
-            "time_to_target": _t("col_ttt"),
-            "context_waste_ratio": _t("col_waste"),
-            "agent_cycles": _t("col_cycles"),
-        }
-        lb.rename(columns=col_map, inplace=True)
-        
-        st.dataframe(lb.sort_values(_t("col_eval"), ascending=False), use_container_width=True)
+        # Ensure display name column exists
+        for df_ in [rdf, nrdf]:
+            if not df_.empty and "config_name" not in df_.columns:
+                df_["config_name"] = df_.get("config_id_full", pd.Series([""] * len(df_)))
+
+        if not rdf.empty:
+            st.subheader("Ranked Results (Significance-Aware)")
+
+            # Display net_spt with CI
+            if is_multi_run:
+                rdf["Net SPT [90% CI]"] = rdf.apply(
+                    lambda r: f"{r.get('net_spt', 0.0):.1f} [{r.get('_spt_ci_lo', 0.0):.1f}, {r.get('_spt_ci_hi', 0.0):.1f}]",
+                    axis=1
+                )
+            else:
+                rdf["Net SPT"] = rdf["net_spt"].apply(lambda x: f"{x:.1f}")
+
+            cols_to_show = ["rank", "tie_band", "config_name"]
+            if is_multi_run:
+                cols_to_show.append("Net SPT [90% CI]")
+            else:
+                cols_to_show.append("Net SPT")
+
+            optional_cols = ["eval_score", "total_tokens", "cost_usd", "_validity_status"]
+            if "n_runs_completed" in rdf.columns:
+                optional_cols.append("n_runs_completed")
+            cols_to_show.extend(optional_cols)
+            
+            st.dataframe(rdf[cols_to_show], use_container_width=True, hide_index=True)
+            
+            # CSV Export
+            csv = rdf.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Aggregated Results (CSV)",
+                data=csv,
+                file_name=f"benchmark_{selected_ts}_aggregated.csv",
+                mime='text/csv',
+            )
+
+        if not nrdf.empty:
+            st.subheader("Not Ranked (Unstable / Insufficient Data)")
+            nr_cols = ["config_name"]
+            if "_validity_status" in nrdf.columns:
+                nr_cols.append("_validity_status")
+            if "n_runs_completed" in nrdf.columns:
+                nr_cols.append("n_runs_completed")
+            st.dataframe(nrdf[nr_cols], use_container_width=True, hide_index=True)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

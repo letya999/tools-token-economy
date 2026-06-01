@@ -24,6 +24,9 @@ from src.features.tool_registry.tools.read_all.validator import ReadAllValidator
 from src.features.tool_registry.tools.write.validator import WriteValidator
 from src.features.tool_registry.tools.patch.validator import PatchValidator
 from src.features.tool_registry.tools.insert_after.validator import InsertAfterValidator
+from src.features.tool_registry.tools.edit.validator import EditValidator
+from src.features.tool_registry.tools.insert.validator import InsertValidator
+from src.features.tool_registry.tools.append.validator import AppendValidator
 from src.features.tool_registry.tools.glob.validator import GlobValidator
 from src.features.tool_registry.tools.rg.validator import RgValidator
 from src.features.tool_registry.tools.grep.validator import GrepValidator
@@ -77,6 +80,9 @@ class ToolRegistry:
             "write": WriteValidator,
             "patch": PatchValidator,
             "insert_after": InsertAfterValidator,
+            "edit": EditValidator,
+            "insert": InsertValidator,
+            "append": AppendValidator,
             "glob": GlobValidator,
             "rg": RgValidator,
             "grep": GrepValidator,

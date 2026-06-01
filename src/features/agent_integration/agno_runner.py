@@ -428,13 +428,24 @@ class AgnoRunner:
             async with contextlib.AsyncExitStack() as stack:
                 mcp_tool_instances = []
                 for cfg in self.mcp_configs:
-                    params = StdioServerParameters(command=cfg.command, args=cfg.resolve_args(worktree_path), cwd=worktree_path)
-                    stdio_transport = await stack.enter_async_context(stdio_client(params))
-                    session = await stack.enter_async_context(ClientSession(stdio_transport[0], stdio_transport[1]))
-                    await session.initialize()
-                    mcp_inst = MCPTools(session=session)
-                    await mcp_inst.initialize()
-                    mcp_tool_instances.append(mcp_inst)
+                    try:
+                        _log.info("Starting MCP server: %s", cfg.tool_name)
+                        params = StdioServerParameters(
+                            command=cfg.command, 
+                            args=cfg.resolve_args(worktree_path), 
+                            cwd=worktree_path
+                        )
+                        stdio_transport = await stack.enter_async_context(stdio_client(params))
+                        session = await stack.enter_async_context(ClientSession(stdio_transport[0], stdio_transport[1]))
+                        await session.initialize()
+                        mcp_inst = MCPTools(session=session)
+                        await mcp_inst.initialize()
+                        mcp_tool_instances.append(mcp_inst)
+                    except Exception as mcp_err:
+                        _log.error("Failed to start MCP server %s: %s", cfg.tool_name, mcp_err)
+                        # Decide whether to fail fast or continue without this tool
+                        # For benchmark reliability, we should probably fail fast
+                        raise RuntimeError(f"MCP server {cfg.tool_name} failed to start") from mcp_err
 
                 start_time = time.time()
                 agent = self._build_agent(model_id, self._build_agno_tools() + mcp_tool_instances, system_prefix=system_prefix)
@@ -467,7 +478,6 @@ class AgnoRunner:
             "agent_runaway": agent_runaway,
             "telemetry_ok": telemetry_ok,
             "schema_overhead_tokens": schema_overhead,
-            "net_spt": net_spt
         })
 
     def run(self, task_description: str, worktree_path: str = ".", test_cmd: str = "uv run pytest", log_path: str | None = None, system_prefix: str = "", preingest_sec: float = 0.0) -> RunMetrics:
@@ -509,7 +519,6 @@ class AgnoRunner:
             "agent_runaway": agent_runaway,
             "telemetry_ok": telemetry_ok,
             "schema_overhead_tokens": schema_overhead,
-            "net_spt": net_spt
         })
 
     def _run_mock(self, task_description: str, start_time: float) -> RunMetrics:

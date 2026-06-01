@@ -1,0 +1,19 @@
+difficulty: easy
+name: "change_func_signature"
+description: |
+  Standardize parameter names in `pipelines/utils/polars_db.py`.
+  
+  Task:
+  1. Rename the parameter `sql` to `statement` in the `execute_sql` function in `pipelines/utils/polars_db.py`.
+  2. Update the docstring to reflect this change.
+  3. Ensure that any calls to this function (if any) or related tests in `tests/unit/test_polars_db.py` are updated accordingly.
+test_cmd: "uv run pytest tests/unit/test_polars_db.py -q"
+timeout_sec: 600
+target_file: "pipelines/utils/polars_db.py"
+required_files:
+  - "pipelines/utils/polars_db.py"
+  - "tests/unit/test_polars_db.py"
+success_criteria:
+  - "`execute_sql` now accepts `statement` instead of `sql`."
+  - "Docstring is updated."
+  - "Tests in `tests/unit/test_polars_db.py` pass."

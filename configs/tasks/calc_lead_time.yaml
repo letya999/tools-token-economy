@@ -1,0 +1,12 @@
+difficulty: "medium"
+name: "calc_lead_time"
+description: "Refactor the lead time calculation in pipelines/calculations/lead_time.py to exclude weekends and holidays. The current implementation uses simple date subtraction. You need to implement a more robust business-day aware logic using Polars expressions."
+test_cmd: "uv run pytest tests/unit/test_lead_time_logic.py -q"
+timeout_sec: 600
+target_file: "pipelines/calculations/lead_time.py"
+required_files:
+  - "pipelines/calculations/lead_time.py"
+  - "tests/unit/test_lead_time_logic.py"
+success_criteria:
+  - "Logic accounts for weekends"
+  - "Tests in test_lead_time_logic.py pass"

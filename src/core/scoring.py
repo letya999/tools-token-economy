@@ -2,6 +2,10 @@ import os
 import yaml
 from typing import Any
 
+# Epsilon floor to prevent a single weak dimension from annihilating the entire score.
+# A score of 0.0 on one axis will heavily penalize (geometric mean) but still yield a value > 0.
+EPS = 0.01
+
 _DEFAULT_EVAL_WEIGHTS: dict[str, float] = {
     "task_solved_score":       0.35,
     "correctness_score":       0.20,
@@ -35,6 +39,7 @@ def compute_eval_composite(judge_scores: dict[str, Any], weights: dict[str, floa
     Weighted geometric mean of judge dimensions.
     Returns 0.0 if not success (success is a hard gate).
     Otherwise returns weighted geometric mean (weights must sum to 1.0).
+    Dimensions are floored at EPS to prevent total score annihilation by a single weak axis.
     """
     if not success or not weights:
         return 0.0
@@ -48,9 +53,9 @@ def compute_eval_composite(judge_scores: dict[str, Any], weights: dict[str, floa
         except (ValueError, TypeError):
             val = 0.0
             
-        if val <= 0.0:
-            # Geometric mean becomes 0 if any contributing score is 0
-            return 0.0
+        # Apply epsilon floor to prevent annihilation
+        val = max(val, EPS)
+            
         product *= val ** w
     
     return float(product)

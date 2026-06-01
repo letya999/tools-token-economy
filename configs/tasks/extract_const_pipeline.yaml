@@ -1,0 +1,20 @@
+difficulty: easy
+name: "extract_const_pipeline"
+description: |
+  Refactor `app/services/dagster_client.py` to extract hardcoded literals into module-level constants.
+  
+  Task:
+  1. Extract the default GraphQL URL `"http://localhost:3000/graphql"` into a module constant `DEFAULT_GRAPHQL_URL`.
+  2. Extract the httpx request timeout `30.0` into a module constant `DEFAULT_TIMEOUT`.
+  3. Update the `DagsterClient` class and its methods to use these constants.
+  4. Ensure the behavior remains unchanged and all tests in `tests/unit/test_dagster_client.py` pass.
+test_cmd: "uv run pytest tests/unit/test_dagster_client.py -q"
+timeout_sec: 600
+target_file: "app/services/dagster_client.py"
+required_files:
+  - "app/services/dagster_client.py"
+  - "tests/unit/test_dagster_client.py"
+success_criteria:
+  - "Constants `DEFAULT_GRAPHQL_URL` and `DEFAULT_TIMEOUT` are defined at the module level."
+  - "The code uses these constants instead of literal values."
+  - "All unit tests pass."

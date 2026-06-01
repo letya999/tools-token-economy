@@ -4,12 +4,6 @@ Tools Token Economy Benchmark Framework.
 NOTE: This benchmark is optimized for native Windows execution.
 While it supports WSL2 as a fallback, running directly on Windows (win32)
 is significantly more reliable and avoids pipe deadlock/subprocess hang issues.
-
-Prerequisites for Windows:
-1. Python 3.12+
-2. Git for Windows (provides grep)
-3. Ripgrep: winget install BurntSushi.ripgrep.MSVC
-4. Node.js + npm install -g opencode-ai
 """
 import argparse
 import os
@@ -23,18 +17,29 @@ if sys.platform != "win32":
     if os.path.isdir(_user_bin) and _user_bin not in os.environ.get("PATH", ""):
         os.environ["PATH"] = _user_bin + ":" + os.environ["PATH"]
 
-from src.core.config_loader import load_benchmark_meta
+from src.core.config_loader import (
+    load_benchmark_configs,
+    load_benchmark_meta,
+    load_codebase_config,
+    load_provider_config,
+    load_task_config,
+    load_task_suite,
+    load_model_sweep,
+    load_tools_config,
+    load_weights_config,
+)
+from src.core.models import ProviderConfig, TaskConfig, CodebaseConfig
 from src.orchestrator.benchmark import BenchmarkOrchestrator
+from src.orchestrator.matrix import MatrixOrchestrator
 
 load_dotenv()
 
 
 def _run_setup_pipeline(args, meta, repo: str | None) -> None:
     """
-    Unified setup pipeline. Runs all 8 stages and prints PASS/FAIL per stage.
+    Unified setup pipeline. Runs all stages and prints PASS/FAIL per stage.
     Aborts on first critical failure.
     """
-    from src.core.config_loader import load_benchmark_configs
     from src.features.preflight import PreflightChecker, PreflightError
 
     width = 60
@@ -93,6 +98,7 @@ def _run_setup_pipeline(args, meta, repo: str | None) -> None:
     if repo and meta:
         try:
             configs = load_benchmark_configs(args.configs)
+            provider_cfg = load_provider_config(args.provider)
             checker = PreflightChecker(
                 repo_path=repo,
                 configs=configs,
@@ -100,6 +106,7 @@ def _run_setup_pipeline(args, meta, repo: str | None) -> None:
                 dry_run=True,
                 target_file=meta.target_file,
                 target_test=meta.target_test,
+                provider_cfg=provider_cfg,
             )
             checker.run()
             stage("Preflight checks", True)
@@ -126,6 +133,8 @@ def _build_dashboard(results_dir: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Tools Token Economy Benchmark Framework")
+    
+    # Configuration paths
     parser.add_argument("--provider", default="configs/provider.yaml", help="Provider config YAML")
     parser.add_argument("--tools", default="configs/tools.yaml", help="Tools/strategies config YAML")
     parser.add_argument("--task-config", default="configs/tasks/aging_stale.yaml", help="Task config YAML")
@@ -135,6 +144,14 @@ def main():
     parser.add_argument("--configs", default="configs/benchmark_configs.yaml",
                         help="Legacy: single combined benchmark configs YAML (backward compat)")
 
+    # Matrix & Suite flags
+    parser.add_argument("--task-suite", help="Path to a task suite manifest YAML")
+    parser.add_argument("--models", help="Path to a model sweep manifest YAML")
+    parser.add_argument("--matrix", action="store_true", help="Run full models x tasks matrix (requires --task-suite and --models)")
+    parser.add_argument("--estimate", action="store_true", help="Estimate matrix size and cost, then exit")
+    parser.add_argument("--yes", action="store_true", help="Skip confirmation for paid runs")
+
+    # Execution overrides
     parser.add_argument("--results", default="results", help="Directory to save results")
     _default_wt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_oc_worktrees")
     parser.add_argument("--worktree-base", default=_default_wt, help="Base directory for temporary worktrees")
@@ -162,6 +179,12 @@ def main():
         default=5,
         help="Number of full benchmark repetitions (runs) to execute.",
     )
+    
+    # Budget overrides
+    parser.add_argument("--max-matrix-usd", type=float, default=50.0, help="Max USD budget for the entire matrix run")
+    parser.add_argument("--max-session-usd", type=float, default=8.0, help="Max USD budget for a single task session")
+
+    # Maintenance & Reporting
     parser.add_argument("--doctor", action="store_true", help="Run infrastructure health checks")
     parser.add_argument("--auto-fix", action="store_true", help="Attempt to auto-fix issues found by --doctor")
     parser.add_argument("--setup", action="store_true",
@@ -171,68 +194,39 @@ def main():
 
     args = parser.parse_args()
 
-    # Handle task-name override
+    # Base configuration loading
     if args.task_name:
         args.task_config = f"configs/tasks/{args.task_name}.yaml"
         if not os.path.exists(args.task_config):
              print(f"Error: Task config not found at {args.task_config}")
              return
 
-    from src.core.config_loader import (
-        load_codebase_config,
-        load_provider_config,
-        load_task_config,
-        load_tools_config,
-        load_weights_config,
-    )
-    from src.core.models import ProviderConfig, TaskConfig, CodebaseConfig
-
-    # Check if new-style config files exist
-    _new_style = (
-        os.path.exists(args.provider)
-        and os.path.exists(args.tools)
-        and os.path.exists(args.task_config)
-        and os.path.exists(args.codebase)
-    )
-
-    if _new_style:
-        provider_cfg = load_provider_config(args.provider)
-        task_cfg = load_task_config(args.task_config)
-        codebase_cfg = load_codebase_config(args.codebase)
-        tools_cfg = load_tools_config(args.tools, provider_cfg)
-        weights_cfg = load_weights_config(args.weights) if os.path.exists(args.weights) else {}
+    provider_cfg = load_provider_config(args.provider)
+    codebase_cfg = load_codebase_config(args.codebase)
+    tools_cfg = load_tools_config(args.tools, provider_cfg)
+    weights_cfg = load_weights_config(args.weights) if os.path.exists(args.weights) else {}
+    
+    # Resolve models (sweep or single)
+    if args.models:
+        models = load_model_sweep(args.models, provider_cfg)
     else:
-        # Legacy mode: load from single benchmark_configs.yaml
-        from src.core.config_loader import load_benchmark_configs, load_benchmark_meta
-        meta = load_benchmark_meta(args.configs)
-        tools_cfg = load_benchmark_configs(args.configs)
-
-        repo = args.repo or (meta.repo if meta else None)
-        task_desc = args.task or (meta.task if meta else None)
-        test_cmd = args.test_cmd or (meta.test_cmd if meta else "pytest")
-        timeout_sec = meta.timeout_sec if meta else 600
-        required_files = meta.required_files if meta else []
-
-        # Build minimal config objects for orchestrator
-        provider_cfg = ProviderConfig(model=tools_cfg[0].model if tools_cfg else "openai/gpt-4.1-mini")
-        task_cfg = TaskConfig(
-            description=task_desc or "",
-            test_cmd=test_cmd,
-            timeout_sec=timeout_sec,
-            required_files=required_files,
-            target_file=meta.target_file if meta else None,
-        )
-        codebase_cfg = CodebaseConfig(local_path=repo or "")
-        weights_cfg = {}
-
-    # Apply CLI overrides (works in both new and legacy mode)
+        models = [provider_cfg]
+        
+    # Resolve tasks (suite or single)
+    if args.task_suite:
+        tasks = load_task_suite(args.task_suite)
+    else:
+        tasks = [load_task_config(args.task_config)]
+        
+    # Apply single-run CLI overrides to the (only) task/codebase
     if args.task:
-        task_cfg = task_cfg.model_copy(update={"description": args.task})
+        tasks[0] = tasks[0].model_copy(update={"description": args.task})
     if args.test_cmd:
-        task_cfg = task_cfg.model_copy(update={"test_cmd": args.test_cmd})
+        tasks[0] = tasks[0].model_copy(update={"test_cmd": args.test_cmd})
     if args.repo:
         codebase_cfg = codebase_cfg.model_copy(update={"local_path": args.repo})
 
+    # Maintenance modes
     if args.doctor:
         from src.features.doctor import Doctor
         doc = Doctor(codebase_cfg.local_path or codebase_cfg.github_url)
@@ -241,9 +235,9 @@ def main():
 
     if args.setup:
         meta_for_setup = type('M', (), {
-            'test_cmd': task_cfg.test_cmd,
-            'target_file': task_cfg.target_file,
-            'target_test': task_cfg.target_file,
+            'test_cmd': tasks[0].test_cmd,
+            'target_file': tasks[0].target_file,
+            'target_test': tasks[0].target_file,
         })()
         _run_setup_pipeline(args, meta_for_setup, codebase_cfg.local_path)
         sys.exit(0)
@@ -252,44 +246,88 @@ def main():
         _build_dashboard(args.results)
         sys.exit(0)
 
+    # Cost Estimation
+    if args.estimate:
+        n_configs = len(args.config_ids) if args.config_ids else len(tools_cfg)
+        total_runs = len(models) * len(tasks) * n_configs * args.runs
+        projected_usd = total_runs * 0.02
+        projected_tokens = total_runs * 120_000
+        
+        print("\n" + "="*60)
+        print("  MATRIX ESTIMATE")
+        print("="*60)
+        print(f"  Models:   {len(models)}")
+        print(f"  Tasks:    {len(tasks)}")
+        print(f"  Configs:  {n_configs}")
+        print(f"  Runs:     {args.runs}")
+        print("-"*30)
+        print(f"  Total Runs:       {total_runs}")
+        print(f"  Projected Cost:   ${projected_usd:.2f}")
+        print(f"  Projected Tokens: {projected_tokens:,}")
+        print(f"  Budget Cap:       ${args.max_matrix_usd:.2f}")
+        print("="*60 + "\n")
+        return
+
+    # Dispatch logic
+    is_matrix = args.matrix or args.task_suite or args.models
+    
     os.makedirs(args.results, exist_ok=True)
 
-    orchestrator = BenchmarkOrchestrator(
-        provider_config=provider_cfg,
-        tools_configs=tools_cfg,
-        task_config=task_cfg,
-        codebase_config=codebase_cfg,
-        weights_config=weights_cfg,
-        results_dir=args.results,
-        worktree_base=args.worktree_base,
-        dry_run=args.dry_run,
-        n_runs=args.runs,
-    )
-
-    if args.retry_failed is not None:
-        ts = None if args.retry_failed == "latest" else args.retry_failed
-        session_id = orchestrator.run_failed_configs(run_timestamp=ts, config_ids=args.config_ids)
+    if is_matrix:
+        if args.matrix and not (args.task_suite and args.models):
+            print("Error: --matrix requires both --task-suite and --models")
+            return
+            
+        orchestrator = MatrixOrchestrator(
+            models=models,
+            tasks=tasks,
+            agent_configs=tools_cfg,
+            codebase=codebase_cfg,
+            weights=weights_cfg,
+            results_dir=args.results,
+            n_runs=args.runs,
+            dry_run=args.dry_run,
+            max_matrix_usd=args.max_matrix_usd,
+        )
+        orchestrator.run()
     else:
-        session_id = orchestrator.run_suite(config_ids=args.config_ids)
+        # Standard single orchestrator behavior
+        orchestrator = BenchmarkOrchestrator(
+            provider_config=provider_cfg,
+            tools_configs=tools_cfg,
+            task_config=tasks[0],
+            codebase_config=codebase_cfg,
+            weights_config=weights_cfg,
+            results_dir=args.results,
+            worktree_base=args.worktree_base,
+            dry_run=args.dry_run,
+            n_runs=args.runs,
+        )
 
-    # Validity Summary for multi-run sessions
-    if session_id and args.runs > 1:
-        from src.features.multi_run import aggregate_session
-        from src.features.stats import STATUS_OK
-        
-        results = aggregate_session(args.results, session_id)
-        if results:
-            print("\n" + "="*60)
-            print("  VALIDITY SUMMARY")
-            print("="*60)
-            for cfg_id, stats in results.items():
-                status = stats.get("_validity_status", "unknown")
-                if status != STATUS_OK:
-                    suggested = stats.get("_suggested_additional_runs", 0)
-                    print(f"  [{status.upper()}] Config: {cfg_id}")
-                    if suggested > 0:
-                        print(f"             Suggested additional runs: {suggested}")
-            print("="*60 + "\n")
+        if args.retry_failed is not None:
+            ts = None if args.retry_failed == "latest" else args.retry_failed
+            session_id = orchestrator.run_failed_configs(run_timestamp=ts, config_ids=args.config_ids)
+        else:
+            session_id = orchestrator.run_suite(config_ids=args.config_ids)
+
+        # Validity Summary for multi-run sessions
+        if session_id and args.runs > 1:
+            from src.features.multi_run import aggregate_session
+            from src.features.stats import STATUS_OK
+            
+            results = aggregate_session(args.results, session_id)
+            if results:
+                print("\n" + "="*60)
+                print("  VALIDITY SUMMARY")
+                print("="*60)
+                for cfg_id, stats in results.items():
+                    status = stats.get("_validity_status", "unknown")
+                    if status != STATUS_OK:
+                        suggested = stats.get("_suggested_additional_runs", 0)
+                        print(f"  [{status.upper()}] Config: {cfg_id}")
+                        if suggested > 0:
+                            print(f"             Suggested additional runs: {suggested}")
+                print("="*60 + "\n")
 
 if __name__ == "__main__":
     main()

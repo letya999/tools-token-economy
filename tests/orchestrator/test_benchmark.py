@@ -56,7 +56,7 @@ def mock_repo(tmp_path):
 
 @pytest.fixture
 def orchestrator(mock_provider_config, mock_tools_configs, mock_task_config, mock_codebase_config, tmp_path):
-    with patch("src.orchestrator.benchmark.GitIsolationProvider"):
+    with patch("src.orchestrator.benchmark_runner.GitIsolationProvider"):
         orch = BenchmarkOrchestrator(
             provider_config=mock_provider_config,
             tools_configs=mock_tools_configs,
@@ -115,7 +115,7 @@ def test_orchestrator_teardown_called_on_error(orchestrator, tmp_path):
     orchestrator.isolation.teardown = MagicMock()
     # Simulate crash during agent run
     with patch.object(orchestrator, "_run_preflight"), \
-         patch("src.orchestrator.benchmark.AgnoRunner") as mock_runner_cls:
+         patch("src.orchestrator.benchmark_runner.AgnoRunner") as mock_runner_cls:
         mock_runner_cls.return_value.run = MagicMock(side_effect=RuntimeError("crash"))
         orchestrator.run_suite()
 
@@ -185,7 +185,7 @@ def test_orchestrator_passes_test_cmd_to_runner(mock_provider_config, mock_tools
     
     custom_task_config = TaskConfig(description="task", test_cmd="uv run pytest --custom", timeout_sec=60, required_files=[])
     
-    with patch("src.orchestrator.benchmark.GitIsolationProvider"):
+    with patch("src.orchestrator.benchmark_runner.GitIsolationProvider"):
         orch = BenchmarkOrchestrator(
             provider_config=mock_provider_config,
             tools_configs=mock_tools_configs,
@@ -205,7 +205,7 @@ def test_orchestrator_passes_test_cmd_to_runner(mock_provider_config, mock_tools
     with patch.object(orch, "_run_preflight"), \
          patch.object(orch, "_setup_target_repo"), \
          patch.object(orch, "_capture_baseline", return_value=5), \
-         patch("src.orchestrator.benchmark.AgnoRunner") as mock_runner_cls:
+         patch("src.orchestrator.benchmark_runner.AgnoRunner") as mock_runner_cls:
         mock_runner = mock_runner_cls.return_value
         mock_runner.run = MagicMock(return_value=_mock_run_metrics())
 

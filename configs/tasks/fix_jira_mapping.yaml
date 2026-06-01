@@ -1,0 +1,21 @@
+difficulty: medium
+name: "fix_jira_mapping"
+description: |
+  Jira status category inference in the clean layer is missing support for localized status names used in some projects.
+  Specifically, 'Выполнено' (Done) should be mapped to the 'done' category, and 'К выполнению' (To Do) should be mapped to 'to_do'.
+  
+  Currently, these statuses fall through to the default 'in_progress' category in `pipelines/assets/jira/clean/dimensions.py`.
+  
+  Task:
+  1. Update the `CASE` expression in `clean_jira_issue_statuses` asset within `pipelines/assets/jira/clean/dimensions.py` to include these localized names.
+  2. Update the fallback logic in `tests/unit/test_jira_clean.py` (specifically `TestHistoricalStatusSync.test_status_category_inference_from_name`) to correctly reflect these mappings and ensure they are tested.
+test_cmd: "uv run pytest tests/unit/test_jira_clean.py -q"
+timeout_sec: 600
+target_file: "pipelines/assets/jira/clean/dimensions.py"
+required_files:
+  - "pipelines/assets/jira/clean/dimensions.py"
+  - "tests/unit/test_jira_clean.py"
+success_criteria:
+  - "'Выполнено' maps to 'done' category in both SQL logic and test fallback."
+  - "'К выполнению' maps to 'to_do' category in both SQL logic and test fallback."
+  - "The existing tests in `tests/unit/test_jira_clean.py` pass."

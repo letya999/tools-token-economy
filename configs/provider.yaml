@@ -11,7 +11,7 @@ max_iterations: 50
 # Judge model (must differ from agent to avoid self-evaluation bias)
 judge:
   provider: "openai"
-  model: "gpt-5.1-mini"       # direct OpenAI Platform, NOT via OpenRouter
+  model: "gpt-5.4-nano"       # direct OpenAI Platform, NOT via OpenRouter
   api_base: ""
   api_key_env: "OPENAI_API_KEY"
   temperature: 0.0

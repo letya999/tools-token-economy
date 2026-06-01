@@ -1,0 +1,20 @@
+difficulty: medium
+name: "add_sprint_metric"
+description: |
+  The `sprint_health` calculation module is missing a basic completion ratio metric.
+  
+  Task:
+  1. Implement a new function `calculate_sprint_completion_ratio(commitment_df: pl.DataFrame, completed_df: pl.DataFrame) -> pl.DataFrame` in `pipelines/calculations/sprint_health.py`.
+  2. The function should join the committed issues with completed issues per sprint and calculate `completion_ratio = (completed_count / committed_count) * 100`.
+  3. Ensure it handles the case where `committed_count` is zero to avoid division by zero.
+  4. The resulting DataFrame should include `iteration_id`, `committed_count`, `completed_count`, and `completion_ratio`.
+test_cmd: "uv run pytest tests/unit/test_sprint_health.py -q"
+timeout_sec: 600
+target_file: "pipelines/calculations/sprint_health.py"
+required_files:
+  - "pipelines/calculations/sprint_health.py"
+  - "tests/unit/test_sprint_health.py"
+success_criteria:
+  - "New function `calculate_sprint_completion_ratio` exists in `pipelines/calculations/sprint_health.py`."
+  - "The function correctly calculates the ratio of completed to committed issues."
+  - "Division by zero is handled (returns 0.0 or 100.0 depending on logic, 0.0 is safer if nothing was committed)."

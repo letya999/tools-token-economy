@@ -300,3 +300,50 @@ class TestPreflightError:
             with patch("shutil.which", side_effect=lambda cmd: cmd if cmd != "git" else "git"):
                 with pytest.raises(PreflightError):
                     checker.run()
+
+
+# ---------------------------------------------------------------------------
+# Model existence checks
+# ---------------------------------------------------------------------------
+
+class TestModelExistenceChecks:
+    def test_model_check_skipped_in_dry_run(self, git_repo):
+        from src.core.models import ProviderConfig
+        checker = PreflightChecker(
+            repo_path=str(git_repo),
+            configs=[],
+            test_cmd="pytest",
+            dry_run=True,
+            provider_cfg=ProviderConfig(model="gpt-999-nonexistent"),
+        )
+        results = checker._check_models_exist()
+        assert all(r.passed for r in results)
+        assert any("Skipped in dry-run" in r.detail for r in results)
+
+    @patch("openai.OpenAI")
+    def test_openai_model_check_fails_on_not_found(self, mock_openai, git_repo):
+        from unittest.mock import MagicMock
+
+        import openai
+        from src.core.models import JudgeConfig, ProviderConfig
+        
+        mock_client = MagicMock()
+        mock_client.models.retrieve.side_effect = openai.NotFoundError(
+            message="model not found", response=MagicMock(status_code=404), body={}
+        )
+        mock_openai.return_value = mock_client
+
+        checker = PreflightChecker(
+            repo_path=str(git_repo),
+            configs=[],
+            test_cmd="pytest",
+            dry_run=False,
+            provider_cfg=ProviderConfig(model="gpt-999-fake", judge=JudgeConfig(model="gpt-999-fake")),
+        )
+        
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}):
+            results = checker._check_models_exist()
+        
+        assert any(not r.passed and r.level == "critical" for r in results)
+        assert any("not found on OpenAI" in r.detail for r in results)
+
