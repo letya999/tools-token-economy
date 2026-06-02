@@ -141,7 +141,49 @@ A tool is a class in `src/features/tool_registry/` that inherits `BaseTool` from
 
 You are an expert AI agent working on a research framework designed to evaluate the token-efficiency and task-efficiency of coding agents.
 
-**Latest benchmark run (2026-05-30):** 20/21 configs passed (95%). Champion: `08_git_grep` (SPT=80.4, $0.0027). Most expensive: `06_read_all` (682K tokens, $0.0877). Only failure: `03_gemini_like` — read_all context explosion exceeds usable model window.
+**Latest benchmarks:** Hard task (2026-06-01, 21 configs × 6 reps): `16_serena_only` = token-efficiency champion (100% pass, 79K avg tokens, judge=0.68). Medium task (2026-05-25): `10_ugrep` = most efficient (2.7K tokens). `03_gemini_like` fails on BOTH tasks due to read_all context explosion.
+
+## Benchmark Results
+
+### Hard task: aging_stale (2026-06-01, session 20260601_131317)
+21 configs × 6 repetitions (126 runs). Task: add `is_stale` flag to Polars aging pipeline.
+Total agent cost: $15.16. Judge: gpt-5.4-nano (retroactively scored after fixing resp.response_usage bug).
+
+**Leaderboard (by avg judge score):**
+
+| Rank | Config | Pass | Judge | Avg Tokens | Insight |
+|------|--------|------|-------|------------|---------|
+| 1 | 04_codex_like | 6/6 100% | 0.85 | 861K | highest quality, 10x expensive |
+| 2 | 20_serena_semble | 5/6 83% | 0.79 | 120K | best balance quality/cost |
+| 3 | 14_repo_map | 4/6 67% | 0.76 | 97K | |
+| 4 | **16_serena_only** | **6/6 100%** | **0.68** | **79K** | **token-efficiency champion** |
+| 5 | 17_semble_only | 5/6 83% | 0.58 | 84K | |
+| -- | 03_gemini_like | 0/6 0% | 0.00 | 419K | worst: context explosion |
+| -- | 21_bash_only | 0/6 0% | 0.10 | 85K | can't do structured edits |
+
+**Key quirks discovered:**
+- `rg_lsp` and `git_grep` scored 67% pass rate but judge=0.37 — tests passed "by luck", implementation was shallow
+- `rg_repo_map` scored 0% pass but judge=0.49 — correct approach, execution failed (tests stricter than expected)
+- `ugrep` used 1.2M tokens on hard task (vs 2.7K on medium) — tool behavior scales badly with complexity
+- LLM judge had a critical bug (`resp.metrics` AttributeError). Fixed: tokens read from `resp.response_usage` (Agno's actual API)
+
+### Medium task: Bearer token bug (2026-05-25, session 20260525_002838)
+20 configs, 1 repetition. Task: fix case-insensitive Bearer prefix in auth middleware.
+14/20 configs passed (70%).
+
+**Efficiency leaderboard (tokens used, all passed):**
+
+| Config | Tokens | Cost | Notes |
+|--------|--------|------|-------|
+| 10_ugrep | 2,697 | $0.0018 | most efficient on medium task |
+| 18_rg_repo_map | 3,003 | $0.0020 | |
+| 07_grep | 3,439 | $0.0022 | |
+| 02_claude_code_like | 3,559 | $0.0022 | |
+| 08_git_grep | 4,576 | $0.0027 | |
+| 03_gemini_like | 175,208 | $0.1015 | FAILED: read_all explosion |
+
+**Key quirk:** On medium tasks, targeted search (grep family) dramatically outperforms semantic tools.
+On hard tasks, the ranking flips — semantic tools (serena) handle multi-file navigation better.
 
 ## Core Mandates
 - **Clean Architecture**: Strictly maintain separation between layers (Core, Features, Orchestrator).

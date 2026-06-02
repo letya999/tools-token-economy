@@ -4,29 +4,55 @@
 
 This benchmark runs 21 tool configurations against the same coding task and measures success rate, token cost, efficiency (SPT), and 7 LLM-judge quality dimensions. All configs use the same model (`gpt-4.1-mini`) and the same task — only the available tools differ.
 
-## Results snapshot — run 2026-05-30
+## Results snapshot — Hard task, 2026-06-01
 
-20 of 21 configs passed (95%). Key findings:
+**21 configs × 6 repetitions = 126 runs.** Task: add `is_stale` flag to a Polars work-item aging pipeline. 3 files to navigate, strict schema requirement. Total cost: $15.16.
 
-> **Run metadata:** n=1 · model=gpt-4.1-mini · task=medium · 2026-05-30
-> Results below show selected configs sorted by SPT. Full interactive table in the dashboard.
+> **Run metadata:** n=6 reps · model=gpt-4.1-mini · task=hard (aging_stale) · 2026-06-01
+> Judge model: gpt-5.4-nano. Sorted by avg judge score across 6 reps.
 
-| Config | Tools | Tokens | Cost $ | SPT | Waste% |
+| Config | Tools | Pass | Judge | Avg Tokens | Efficiency |
 |---|---|---|---|---|---|
-| **08_git_grep** | git\_grep + edit | 12,431 | **$0.0027** | **80.4** | 85.7% |
-| **02_claude_code_like** | glob + rg + edit | 17,139 | $0.0031 | 58.3 | 75.4% |
-| **07_grep** | grep + edit | 20,393 | $0.0036 | 49.0 | 80.3% |
-| 04_codex_like | grep + read + edit | 36,263 | $0.0071 | 27.6 | 34.3% |
-| 10_ugrep | ugrep + edit | 51,462 | $0.0080 | 19.4 | 100.0% |
-| 05_read_only | glob + read + edit | 59,890 | $0.0086 | 16.7 | 59.0% |
-| 14_repo_map | repo\_map + edit | 177,189 | $0.0291 | 5.6 | 97.6% |
-| 01_cursor_like | repo\_map + RAG + shell | 282,889 | $0.0503 | 3.5 | 98.2% |
-| 06_read_all | read\_all + edit | 682,478 | $0.0877 | 1.5 | 85.8% |
+| **04_codex_like** | grep+read+edit | **6/6** | **0.85** | 861K | expensive |
+| **20_serena_semble** | serena+semble | 5/6 | **0.79** | 120K | ⭐ best balance |
+| 14_repo_map | repo_map+edit | 4/6 | 0.76 | 97K | good |
+| **16_serena_only** | serena | **6/6** | 0.68 | **79K** | ⭐ token champion |
+| 17_semble_only | semble | 5/6 | 0.58 | 84K | |
+| 10_ugrep | ugrep+edit | 4/6 | 0.62 | 1,224K | very expensive |
+| 18_rg_repo_map | rg+repo_map | 0/6 | 0.49 | 79K | 0 pass but judge≠0 |
+| 19_rg_lsp | rg+lsp | 4/6 | 0.37 | 425K | pass≠quality |
+| 03_gemini_like | read_all+repo_map | **0/6** | **0.00** | 419K | total failure |
+| 21_bash_only | bash | 0/6 | 0.10 | 85K | can't structure edits |
 
-> **SPT** = Score Per 1K Tokens (higher = more efficient). **Waste%** = fraction of context irrelevant to the task.
-> `03_gemini_like` (read\_all + repo\_map) used 682K tokens — agent entered a read loop. Excluded from table due to extreme token cost distorting scale.
+**Key findings:**
+- `serena_only` is the **token-efficiency champion**: 100% pass rate at only 79K avg tokens (11x fewer than codex_like at equal pass rate)
+- `serena_semble` offers the best quality/cost balance: judge=0.79 at 120K tokens
+- `rg_lsp` and `git_grep` had 67% pass rate but judge score of only 0.37 — they passed tests without truly solving the task
+- `rg_repo_map`: 0% pass but judge=0.49 — the agent had the right approach but execution failed
+- `gemini_like` (read_all+repo_map): 0% pass, judge=0.00 at 419K tokens — agent entered a read loop and never produced changes
 
-**Bottom line:** Targeted search tools (`git_grep`, `rg`, `grep`) use significantly fewer tokens than bulk-read strategies. In this single run, `git_grep` achieved the best SPT score (12K tokens vs 682K for `read_all`). Multi-run aggregation needed for statistical confidence.
+## Results snapshot — Medium task, 2026-05-25
+
+**20 configs, 1 repetition.** Task: fix case-insensitive Bearer token prefix in auth middleware.
+14/20 configs passed (70%). Sorted by token efficiency (ascending tokens = more efficient).
+
+> **Run metadata:** n=1 · model=gpt-4.1-mini · task=medium · 2026-05-25
+
+| Config | Tools | Tokens | Cost $ | Pass | Notes |
+|---|---|---|---|---|---|
+| **10_ugrep** | ugrep + edit | **2,697** | **$0.0018** | ✓ | most efficient |
+| **18_rg_repo_map** | rg + repo_map | 3,003 | $0.0020 | ✓ | |
+| **07_grep** | grep + edit | 3,439 | $0.0022 | ✓ | |
+| **05_read_only** | glob + read | 3,276 | $0.0021 | ✓ | |
+| **02_claude_code_like** | glob + rg + edit | 3,559 | $0.0022 | ✓ | |
+| 08_git_grep | git_grep + edit | 4,576 | $0.0027 | ✓ | |
+| 13_lsp | lsp + edit | 9,994 | $0.0077 | ✓ | |
+| 14_repo_map | repo_map + edit | 11,087 | $0.0065 | ✓ | |
+| 12_tree_sitter | tree_sitter + edit | 13,469 | $0.0074 | ✓ | |
+| 20_serena_semble | serena+semble | 32,747 | $0.0188 | ✓ | |
+| 03_gemini_like | read_all+repo_map | 175,208 | $0.1015 | ✗ | context explosion |
+
+**Key finding:** On medium tasks, lightweight grep-style tools dominate. On hard tasks (see above), semantic tools (serena) take the lead. Task complexity is the key differentiator.
 
 ---
 

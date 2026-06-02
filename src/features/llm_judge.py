@@ -188,11 +188,18 @@ class LLMJudge:
                 resp = self.model.response(msgs)
                 content = resp.content
                 
-                # Extract tokens (guard against MagicMock in tests)
+                # Token usage lives in resp.response_usage (MessageMetrics), not resp.input_tokens
+                # resp.input_tokens is Optional[int]=None — only response_usage is populated
+                # by _parse_provider_response() from OpenAI's usage object.
                 try:
-                    itok = int(getattr(resp.metrics, "input_tokens", 0) or 0)
-                    otok = int(getattr(resp.metrics, "output_tokens", 0) or 0)
-                except (TypeError, ValueError):
+                    usage = getattr(resp, "response_usage", None)
+                    if usage is not None:
+                        itok = int(getattr(usage, "input_tokens", 0) or 0)
+                        otok = int(getattr(usage, "output_tokens", 0) or 0)
+                    else:
+                        itok = int(getattr(resp, "input_tokens", 0) or 0)
+                        otok = int(getattr(resp, "output_tokens", 0) or 0)
+                except (TypeError, ValueError, AttributeError):
                     itok = otok = 0
                 cost = (itok / 1_000_000 * pricing["input"]) + (otok / 1_000_000 * pricing["output"])
                 
